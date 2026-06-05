@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Cadastrar Riscos{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-title">
+    <div>
+      <h2>Novo risco</h2>
+      <p>Cadastre o risco uma vez para usar nos três modelos de Word.</p>
+    </div>
+  </div>
+  <form action="{{ url_for('create_risk') }}" method="post" class="form-card">
+    {% set risk = None %}
+    {% include "_form.html" %}
+    <div class="actions end">
+      <button class="btn primary" type="submit">Cadastrar risco</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-title split">
+    <div>
+      <h2>Riscos cadastrados</h2>
+      <p>Edite ou exclua riscos já salvos no sistema.</p>
+    </div>
+    <input class="search" id="riskSearch" placeholder="Buscar risco cadastrado...">
+  </div>
+
+  {% if risks %}
+    <div class="risk-list" id="riskList">
+      {% for item in risks %}
+        <article class="risk-card" data-search="{{ (item.risco ~ ' ' ~ item.acoes ~ ' ' ~ item.tipo_risco ~ ' ' ~ item.grau_severidade ~ ' ' ~ item.grau_possibilidade ~ ' ' ~ item.grau_nivel_risco)|lower }}">
+          <div class="risk-heading">
+            <strong>{{ item.risco }}</strong>
+            <span>{{ item.tipo_risco or 'Sem tipo' }} · {{ item.grau_severidade or 'Sem severidade' }} · {{ item.grau_nivel_risco or 'Sem nível' }}</span>
+          </div>
+          <p>{{ item.acoes }}</p>
+          <div class="card-footer">
+            <a class="btn small" href="{{ url_for('edit_risk', risk_id=item.id) }}">Editar</a>
+            <button class="btn small danger" type="submit" form="delete-{{ item.id }}">Excluir</button>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">
+      <strong>Nenhum risco cadastrado ainda.</strong>
+      <p>Cadastre o primeiro risco acima para começar a gerar os arquivos Word.</p>
+    </div>
+  {% endif %}
+
+  {% for item in risks %}
+    <form id="delete-{{ item.id }}" action="{{ url_for('delete_risk', risk_id=item.id) }}" method="post" onsubmit="return confirm('Excluir este risco?')"></form>
+  {% endfor %}
+</section>
+{% endblock %}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Cadastro de Riscos{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <span class="eyebrow">Automação SST</span>
+        <h1>Cadastro de Riscos e Setores</h1>
+        <p>Cadastre riscos no banco de dados, registre setores/cargos e gere o PGR completo em Word.</p>
+      </div>
+      <div class="hero-card">
+        <strong>Modelos ativos</strong>
+        <span>PGR completo</span>
+        <span>Banco de dados PostgreSQL/SQLite</span>
+        <span>Inventário de riscos por setor</span>
+        <span>Relação Função x Atividade</span>
+        <span>Plano de Ação</span>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Navegação principal">
+      <a class="tab {% if request.endpoint in ['cadastro', 'edit_risk'] %}active{% endif %}" href="{{ url_for('cadastro') }}">Cadastrar riscos</a>
+      <a class="tab {% if request.endpoint in ['setores', 'edit_sector'] %}active{% endif %}" href="{{ url_for('setores') }}">Cadastrar setores/cargos</a>
+      <a class="tab {% if request.endpoint == 'gerar' %}active{% endif %}" href="{{ url_for('gerar') }}">Gerar PGR completo</a>
+    </nav>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <section class="alerts">
+          {% for category, message in messages %}
+            <div class="alert {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </section>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

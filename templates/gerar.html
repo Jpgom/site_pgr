@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Gerar PGR completo{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-title split">
+    <div>
+      <h2>Gerar PGR completo</h2>
+      <p>Preencha os dados da empresa, escolha cada setor e marque os riscos que entrarão naquele setor. O Word final será preenchido direto no modelo completo do PGR.</p>
+    </div>
+    <input class="search" id="pgrSectorSearch" placeholder="Buscar por setor, cargo ou risco...">
+  </div>
+
+  <form id="pgrSelectionForm" method="post">
+    <div class="company-box">
+      <div>
+        <h3>Dados do documento</h3>
+        <p>Essas informações preencherão os campos de empresa, CNPJ e vigência no PGR.</p>
+      </div>
+      <div class="company-grid">
+        <label>
+          <span>Empresa</span>
+          <input name="empresa" required placeholder="Ex.: NOME DA EMPRESA LTDA">
+        </label>
+        <label>
+          <span>CNPJ</span>
+          <input name="cnpj" required placeholder="Ex.: 00.000.000/0001-00">
+        </label>
+        <label>
+          <span>Data atual / início da vigência</span>
+          <input name="data_atual" value="{{ today }}" placeholder="Ex.: 06/2026">
+        </label>
+        <label>
+          <span>Data final da vigência</span>
+          <input name="data_final" value="{{ next_year }}" placeholder="Ex.: 06/2027">
+        </label>
+      </div>
+    </div>
+
+    <div class="toolbar toolbar-main">
+      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', true); togglePgrRisks(true)">Selecionar tudo</button>
+      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', false); togglePgrRisks(false)">Limpar seleção</button>
+      <button class="btn primary big" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">Gerar PGR completo</button>
+    </div>
+
+    {% if sectors and risks %}
+      <div class="sector-risk-list" id="pgrSectorList">
+        {% for sector in sectors %}
+          <article class="risk-card selectable sector-risk-card" data-search="{{ (sector.setor ~ ' ' ~ sector.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ sector.cargos|map(attribute='cbo')|join(' ') ~ ' ' ~ risks|map(attribute='risco')|join(' ') ~ ' ' ~ risks|map(attribute='tipo_risco')|join(' '))|lower }}">
+            <label class="checkline sector-checkline">
+              <input type="checkbox" name="pgr_sector_ids" value="{{ sector.id }}">
+              <div>
+                <strong>{{ sector.setor }}</strong>
+                <span>Cargos: {{ sector.cargos|map(attribute='cargo')|join(', ') }}</span>
+              </div>
+            </label>
+
+            <div class="nested-risks">
+              <span class="nested-title">Riscos que entrarão neste setor</span>
+              <div class="nested-grid">
+                {% for risk in risks %}
+                  <label class="mini-check">
+                    <input class="pgr-risk-check" type="checkbox" name="sector_risk_ids_{{ sector.id }}" value="{{ risk.id }}">
+                    <span>
+                      <strong>{{ risk.risco }}</strong>
+                      <small>{{ risk.tipo_risco }} · {{ risk.grau_nivel_risco }}</small>
+                    </span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+
+      <div class="toolbar end optional-tools">
+        <span>Exportações avulsas para conferência:</span>
+        <button class="btn ghost" type="submit" formaction="{{ url_for('generate_action_plan') }}">Plano de Ação</button>
+        <button class="btn ghost" type="submit" formaction="{{ url_for('generate_risco_pgr') }}">Inventário/Risco PGR</button>
+      </div>
+    {% elif not sectors %}
+      <div class="empty">
+        <strong>Nenhum setor cadastrado ainda.</strong>
+        <p>Cadastre setores/cargos antes de gerar o PGR completo.</p>
+        <a class="btn primary" href="{{ url_for('setores') }}">Cadastrar setores/cargos</a>
+      </div>
+    {% else %}
+      <div class="empty">
+        <strong>Nenhum risco cadastrado ainda.</strong>
+        <p>Cadastre riscos antes de gerar o PGR completo.</p>
+        <a class="btn primary" href="{{ url_for('cadastro') }}">Cadastrar riscos</a>
+      </div>
+    {% endif %}
+  </form>
+</section>
+
+<section class="panel compact-panel">
+  <div class="panel-title split">
+    <div>
+      <h2>Blocos avulsos de setor</h2>
+      <p>Use somente se quiser conferir a Relação Função x Atividade ou o Descritivo Setor separadamente.</p>
+    </div>
+    <input class="search" id="sectorSearch" placeholder="Buscar por setor ou cargo...">
+  </div>
+
+  <form id="sectorSelectionForm" method="post">
+    <div class="date-grid">
+      <label>
+        <span>Data inicial da vigência</span>
+        <input name="data_atual" value="{{ today }}" placeholder="Ex.: 06/2026">
+      </label>
+      <label>
+        <span>Data final da vigência</span>
+        <input name="data_final" value="{{ next_year }}" placeholder="Ex.: 06/2027">
+      </label>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" class="btn ghost" onclick="toggleChecks('sector_ids', true)">Selecionar todos</button>
+      <button type="button" class="btn ghost" onclick="toggleChecks('sector_ids', false)">Limpar seleção</button>
+      <button class="btn primary alt" type="submit" formaction="{{ url_for('generate_relacao_funcao_atividade') }}">Gerar Relação Função x Atividade</button>
+      <button class="btn primary third" type="submit" formaction="{{ url_for('generate_descritivo_setor') }}">Gerar Descritivo Setor</button>
+    </div>
+
+    {% if sectors %}
+      <div class="risk-list" id="sectorList">
+        {% for item in sectors %}
+          <article class="risk-card selectable sector-card" data-search="{{ (item.setor ~ ' ' ~ item.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ item.cargos|map(attribute='cbo')|join(' '))|lower }}">
+            <label class="checkline">
+              <input type="checkbox" name="sector_ids" value="{{ item.id }}">
+              <div>
+                <strong>{{ item.setor }}</strong>
+                <span>{{ item.cargos|length }} cargo(s) cadastrado(s)</span>
+              </div>
+            </label>
+            <ul class="mini-list">
+              {% for cargo in item.cargos %}
+                <li><strong>{{ cargo.cargo }}</strong> · CBO: {{ cargo.cbo }} · {{ cargo.n_func }} funcionário(s)</li>
+              {% endfor %}
+            </ul>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty">
+        <strong>Nenhum setor cadastrado ainda.</strong>
+        <p>Volte para a tela de setores e cadastre os setores/cargos antes de gerar esses blocos.</p>
+        <a class="btn primary" href="{{ url_for('setores') }}">Cadastrar setores/cargos</a>
+      </div>
+    {% endif %}
+  </form>
+</section>
+{% endblock %}

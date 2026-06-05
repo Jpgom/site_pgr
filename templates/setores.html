@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Cadastrar Setores e Cargos
+  <form id="delete-all-sectors" action="{{ url_for('delete_all_sectors') }}" method="post" onsubmit="return confirm('Apagar TODOS os setores e cargos cadastrados? Os riscos serão mantidos.')"></form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-title">
+    <div>
+      <h2>Novo setor</h2>
+      <p>Cadastre o setor e os cargos antes de gerar a Relação Função x Atividade e o Descritivo Setor.</p>
+    </div>
+  </div>
+  <form action="{{ url_for('create_sector') }}" method="post" class="form-card">
+    {% set sector = None %}
+    {% include "_setor_form.html" %}
+    <div class="actions end">
+      <button class="btn primary" type="submit">Cadastrar setor</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-title split">
+    <div>
+      <h2>Setores cadastrados</h2>
+      <p>Edite setores e cargos já salvos no banco de dados. Você pode limpar todos os setores/cargos sem apagar os riscos.</p>
+    </div>
+    <div class="panel-actions">
+      <input class="search" id="sectorSearch" placeholder="Buscar setor ou cargo cadastrado...">
+      {% if sectors %}
+        <button class="btn small danger" type="submit" form="delete-all-sectors">Apagar todos os setores</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if sectors %}
+    <div class="risk-list" id="sectorList">
+      {% for item in sectors %}
+        <article class="risk-card sector-card" data-search="{{ (item.setor ~ ' ' ~ item.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ item.cargos|map(attribute='cbo')|join(' '))|lower }}">
+          <div class="risk-heading">
+            <strong>{{ item.setor }}</strong>
+            <span>{{ item.cargos|length }} cargo(s) cadastrado(s)</span>
+          </div>
+          <ul class="mini-list">
+            {% for cargo in item.cargos %}
+              <li><strong>{{ cargo.cargo }}</strong> · CBO: {{ cargo.cbo }} · {{ cargo.n_func }} funcionário(s)</li>
+            {% endfor %}
+          </ul>
+          <div class="card-footer">
+            <a class="btn small" href="{{ url_for('edit_sector', sector_id=item.id) }}">Editar</a>
+            <button class="btn small danger" type="submit" form="delete-sector-{{ item.id }}">Excluir</button>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="empty">
+      <strong>Nenhum setor cadastrado ainda.</strong>
+      <p>Cadastre o primeiro setor acima para começar a gerar os modelos de setor.</p>
+    </div>
+  {% endif %}
+
+  {% for item in sectors %}
+    <form id="delete-sector-{{ item.id }}" action="{{ url_for('delete_sector', sector_id=item.id) }}" method="post" onsubmit="return confirm('Excluir este setor?')"></form>
+  {% endfor %}
+</section>
+
+  <form id="delete-all-sectors" action="{{ url_for('delete_all_sectors') }}" method="post" onsubmit="return confirm('Apagar TODOS os setores e cargos cadastrados? Os riscos serão mantidos.')"></form>
+{% endblock %}
