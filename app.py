@@ -9,7 +9,7 @@ from typing import Any
 
 from flask import Flask, flash, redirect, render_template, request, send_file, url_for
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Text
+from sqlalchemy import Text, inspect, text
 
 from word_generator import (
     NIVEL_RISCO_COLORS,
@@ -19,6 +19,7 @@ from word_generator import (
     generate_action_plan_docx,
     generate_complete_pgr_docx,
     generate_complete_pcmso_docx,
+    generate_complete_ltcat_docx,
     generate_descritivo_setor_docx,
     generate_pcmso_docx,
     generate_riscos_pcmso_docx,
@@ -69,6 +70,13 @@ class Risk(db.Model):
     fontes_circunstancias = db.Column(Text, nullable=False, default="Durante o processo de trabalho.")
     epis = db.Column(Text, nullable=False)
     epcs = db.Column(Text, nullable=False)
+    ltcat_meio_propagacao = db.Column(Text, default="")
+    ltcat_insalubridade = db.Column(db.String(80), default="Não")
+    ltcat_grau_insalubridade = db.Column(db.String(120), default="Não aplicável")
+    ltcat_aposentadoria_especial = db.Column(db.String(80), default="Não")
+    ltcat_enquadramento_tecnico = db.Column(Text, default="")
+    ltcat_parecer_previdenciario = db.Column(Text, default="")
+    ltcat_periodicidade_jornada = db.Column(Text, default="Mensal (<= 4 horas < 10% jornada)")
     grau_severidade = db.Column(db.String(80), nullable=False)
     grau_possibilidade = db.Column(db.String(80), nullable=False)
     grau_nivel_risco = db.Column(db.String(80), nullable=False)
@@ -89,9 +97,33 @@ class Risk(db.Model):
             "fontes_circunstancias": self.fontes_circunstancias or "Durante o processo de trabalho.",
             "epis": self.epis,
             "epcs": self.epcs,
+            "ltcat_meio_propagacao": self.ltcat_meio_propagacao or "",
+            "ltcat_insalubridade": self.ltcat_insalubridade or "Não",
+            "ltcat_grau_insalubridade": self.ltcat_grau_insalubridade or "Não aplicável",
+            "ltcat_aposentadoria_especial": self.ltcat_aposentadoria_especial or "Não",
+            "ltcat_enquadramento_tecnico": self.ltcat_enquadramento_tecnico or "",
+            "ltcat_parecer_previdenciario": self.ltcat_parecer_previdenciario or "",
+            "ltcat_periodicidade_jornada": self.ltcat_periodicidade_jornada or "Mensal (<= 4 horas < 10% jornada)",
             "grau_severidade": self.grau_severidade,
             "grau_possibilidade": self.grau_possibilidade,
             "grau_nivel_risco": self.grau_nivel_risco,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+        }
+
+
+class SectorGroup(db.Model):
+    __tablename__ = "sector_groups"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    nome = db.Column(db.String(255), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "nome": self.nome,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
         }
@@ -102,15 +134,19 @@ class Sector(db.Model):
 
     id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     setor = db.Column(db.String(255), nullable=False)
+    group_id = db.Column(db.String(32), nullable=True)
     cargos = db.Column(db.JSON, nullable=False, default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     def to_dict(self) -> dict[str, Any]:
         cargos = self.cargos or []
+        group = db.session.get(SectorGroup, self.group_id) if self.group_id else None
         return {
             "id": self.id,
             "setor": self.setor,
+            "grupo_id": self.group_id or "",
+            "grupo_nome": group.nome if group else "Sem grupo",
             "cargos": cargos if isinstance(cargos, list) else [],
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
@@ -214,8 +250,42 @@ def _migrate_json_files_if_needed() -> None:
     db.session.commit()
 
 
+def _ensure_schema_columns() -> None:
+    """Adiciona colunas novas em bancos já existentes sem apagar dados."""
+    inspector = inspect(db.engine)
+    tables = inspector.get_table_names()
+
+    def has_column(table_name: str, column_name: str) -> bool:
+        if table_name not in tables:
+            return False
+        return column_name in {col["name"] for col in inspector.get_columns(table_name)}
+
+    dialect = db.engine.dialect.name
+
+    def add_column(table_name: str, column_sqlite: str, column_pg: str | None = None) -> None:
+        column_name = column_sqlite.split()[0]
+        if has_column(table_name, column_name):
+            return
+        if dialect == "postgresql":
+            stmt = f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {column_pg or column_sqlite}"
+        else:
+            stmt = f"ALTER TABLE {table_name} ADD COLUMN {column_sqlite}"
+        db.session.execute(text(stmt))
+
+    add_column("sectors", "group_id VARCHAR(32)")
+    add_column("risks", "ltcat_meio_propagacao TEXT")
+    add_column("risks", "ltcat_insalubridade VARCHAR(80)")
+    add_column("risks", "ltcat_grau_insalubridade VARCHAR(120)")
+    add_column("risks", "ltcat_aposentadoria_especial VARCHAR(80)")
+    add_column("risks", "ltcat_enquadramento_tecnico TEXT")
+    add_column("risks", "ltcat_parecer_previdenciario TEXT")
+    add_column("risks", "ltcat_periodicidade_jornada TEXT")
+    db.session.commit()
+
+
 def init_database() -> None:
     db.create_all()
+    _ensure_schema_columns()
     _migrate_json_files_if_needed()
 
 
@@ -237,6 +307,13 @@ def _form_to_risk(existing_id: str | None = None) -> dict[str, Any]:
         "fontes_circunstancias": _field("fontes_circunstancias") or "Durante o processo de trabalho.",
         "epis": _field("epis"),
         "epcs": _field("epcs"),
+        "ltcat_meio_propagacao": _field("ltcat_meio_propagacao"),
+        "ltcat_insalubridade": _field("ltcat_insalubridade") or "Não",
+        "ltcat_grau_insalubridade": _field("ltcat_grau_insalubridade") or "Não aplicável",
+        "ltcat_aposentadoria_especial": _field("ltcat_aposentadoria_especial") or "Não",
+        "ltcat_enquadramento_tecnico": _field("ltcat_enquadramento_tecnico"),
+        "ltcat_parecer_previdenciario": _field("ltcat_parecer_previdenciario"),
+        "ltcat_periodicidade_jornada": _field("ltcat_periodicidade_jornada") or "Mensal (<= 4 horas < 10% jornada)",
         "grau_severidade": _field("grau_severidade"),
         "grau_possibilidade": _field("grau_possibilidade"),
         "grau_nivel_risco": _field("grau_nivel_risco"),
@@ -265,6 +342,7 @@ def _form_to_sector(existing_id: str | None = None) -> dict[str, Any]:
     return {
         "id": existing_id or uuid.uuid4().hex,
         "setor": _field("setor"),
+        "grupo_id": _field("grupo_id"),
         "cargos": cargos,
     }
 
@@ -293,6 +371,13 @@ def _risk_from_dict(data: dict[str, Any], risk: Risk | None = None) -> Risk:
     risk.fontes_circunstancias = data.get("fontes_circunstancias") or "Durante o processo de trabalho."
     risk.epis = data["epis"]
     risk.epcs = data["epcs"]
+    risk.ltcat_meio_propagacao = data.get("ltcat_meio_propagacao", "")
+    risk.ltcat_insalubridade = data.get("ltcat_insalubridade") or "Não"
+    risk.ltcat_grau_insalubridade = data.get("ltcat_grau_insalubridade") or "Não aplicável"
+    risk.ltcat_aposentadoria_especial = data.get("ltcat_aposentadoria_especial") or "Não"
+    risk.ltcat_enquadramento_tecnico = data.get("ltcat_enquadramento_tecnico", "")
+    risk.ltcat_parecer_previdenciario = data.get("ltcat_parecer_previdenciario", "")
+    risk.ltcat_periodicidade_jornada = data.get("ltcat_periodicidade_jornada") or "Mensal (<= 4 horas < 10% jornada)"
     risk.grau_severidade = data["grau_severidade"]
     risk.grau_possibilidade = data["grau_possibilidade"]
     risk.grau_nivel_risco = data["grau_nivel_risco"]
@@ -303,6 +388,7 @@ def _risk_from_dict(data: dict[str, Any], risk: Risk | None = None) -> Risk:
 def _sector_from_dict(data: dict[str, Any], sector: Sector | None = None) -> Sector:
     sector = sector or Sector(id=data["id"])
     sector.setor = data["setor"]
+    sector.group_id = data.get("grupo_id") or None
     sector.cargos = data.get("cargos", [])
     sector.updated_at = datetime.utcnow()
     return sector
@@ -391,6 +477,10 @@ def _sorted_exams() -> list[dict[str, Any]]:
     return [exam.to_dict() for exam in Exam.query.order_by(Exam.exame.asc()).all()]
 
 
+def _sorted_groups() -> list[dict[str, Any]]:
+    return [group.to_dict() for group in SectorGroup.query.order_by(SectorGroup.nome.asc()).all()]
+
+
 def _selected_risks() -> list[dict[str, Any]]:
     selected_ids = request.form.getlist("risk_ids")
     if not selected_ids:
@@ -452,7 +542,34 @@ def cadastro():
 
 @app.route("/setores")
 def setores():
-    return render_template("setores.html", sectors=_sorted_sectors())
+    return render_template("setores.html", sectors=_sorted_sectors(), groups=_sorted_groups())
+
+
+@app.post("/grupo/novo")
+def create_group():
+    nome = _field("nome_grupo")
+    if not nome:
+        flash("Informe o nome do grupo.", "error")
+        return redirect(url_for("setores"))
+    existing = SectorGroup.query.filter(db.func.lower(SectorGroup.nome) == nome.lower()).first()
+    if existing:
+        flash("Esse grupo já existe.", "error")
+        return redirect(url_for("setores"))
+    db.session.add(SectorGroup(nome=nome))
+    db.session.commit()
+    flash("Grupo cadastrado com sucesso.", "success")
+    return redirect(url_for("setores"))
+
+
+@app.post("/grupo/<group_id>/excluir")
+def delete_group(group_id: str):
+    group = db.session.get(SectorGroup, group_id)
+    if group:
+        Sector.query.filter_by(group_id=group_id).update({"group_id": None})
+        db.session.delete(group)
+        db.session.commit()
+        flash("Grupo excluído. Os setores foram mantidos sem grupo.", "success")
+    return redirect(url_for("setores"))
 
 
 @app.route("/exames")
@@ -515,6 +632,7 @@ def gerar():
         risks=_sorted_risks(),
         sectors=_sorted_sectors(),
         exams=_sorted_exams(),
+        groups=_sorted_groups(),
         options=FORM_OPTIONS,
         today=today,
         next_year=next_year,
@@ -594,13 +712,13 @@ def edit_sector(sector_id: str):
         if errors:
             for error in errors:
                 flash(error, "error")
-            return render_template("edit_setor.html", sector={**sector_model.to_dict(), **updated})
+            return render_template("edit_setor.html", sector={**sector_model.to_dict(), **updated}, groups=_sorted_groups())
         _sector_from_dict(updated, sector_model)
         db.session.commit()
         flash("Setor atualizado com sucesso.", "success")
         return redirect(url_for("setores"))
 
-    return render_template("edit_setor.html", sector=sector_model.to_dict())
+    return render_template("edit_setor.html", sector=sector_model.to_dict(), groups=_sorted_groups())
 
 
 @app.post("/setor/<sector_id>/excluir")
@@ -620,6 +738,38 @@ def delete_all_sectors():
     db.session.commit()
     flash(f"{count} setor(es) e seus cargos foram apagados. Os riscos cadastrados foram mantidos.", "success")
     return redirect(url_for("setores"))
+
+
+def _selected_sector_ltcat_groups() -> tuple[list[dict[str, Any]], list[str]]:
+    selected_sector_ids = request.form.getlist("pgr_sector_ids")
+    risks = {risk.id: risk.to_dict() for risk in Risk.query.all()}
+    sectors = {sector.id: sector.to_dict() for sector in Sector.query.all()}
+
+    groups: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    if not selected_sector_ids:
+        errors.append("Selecione pelo menos um setor para gerar o LTCAT.")
+        return groups, errors
+
+    for sector_id in selected_sector_ids:
+        sector = sectors.get(sector_id)
+        if not sector:
+            continue
+        risk_ids = request.form.getlist(f"sector_risk_ids_{sector_id}")
+        selected_risks = [risks[risk_id] for risk_id in risk_ids if risk_id in risks]
+        groups.append({"sector": sector, "risks": selected_risks, "exams": []})
+
+    return groups, errors
+
+
+def _company_extra_from_form() -> dict[str, str]:
+    keys = [
+        "endereco", "bairro_cidade", "cep", "cnae", "descricao_atividade", "grau_risco",
+        "cnae_secundario", "descricao_atividade_secundaria", "grau_risco_secundario",
+        "funcionarios", "email", "fone", "data_avaliacao",
+    ]
+    return {key: _field(key) for key in keys}
 
 
 def _send_generated_docx(generator, selected: list[dict[str, Any]], stem: str, download_name: str, *args):
@@ -722,6 +872,40 @@ def generate_riscos_pcmso():
         return _send_generated_docx(generate_riscos_pcmso_docx, groups, "riscos_pcmso", "RISCOS_PCMSO.docx")
     except Exception as exc:
         flash(f"Erro ao gerar riscos/exames do PCMSO: {exc}", "error")
+        return redirect(url_for("gerar"))
+
+
+@app.post("/gerar-ltcat-completo")
+def generate_complete_ltcat():
+    groups, errors = _selected_sector_ltcat_groups()
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return redirect(url_for("gerar"))
+    try:
+        empresa = _field("empresa")
+        cnpj = _field("cnpj")
+        data_atual = _field("data_atual")
+        data_final = _field("data_final")
+        if not empresa:
+            flash("Preencha o nome da empresa para gerar o LTCAT completo.", "error")
+            return redirect(url_for("gerar"))
+        if not cnpj:
+            flash("Preencha o CNPJ da empresa para gerar o LTCAT completo.", "error")
+            return redirect(url_for("gerar"))
+        return _send_generated_docx(
+            generate_complete_ltcat_docx,
+            groups,
+            "ltcat_completo",
+            "LTCAT_COMPLETO.docx",
+            empresa,
+            cnpj,
+            data_atual,
+            data_final,
+            _company_extra_from_form(),
+        )
+    except Exception as exc:
+        flash(f"Erro ao gerar LTCAT completo: {exc}", "error")
         return redirect(url_for("gerar"))
 
 

@@ -101,3 +101,47 @@
     </label>
   </div>
 </div>
+
+<div class="form-section">
+  <div>
+    <h3>Dados para LTCAT</h3>
+    <p>Esses campos serão usados somente na LTCAT. No laudo entram apenas riscos FÍSICO, QUÍMICO e BIOLÓGICO; os demais tipos não serão impressos no bloco técnico da LTCAT.</p>
+  </div>
+  <div class="grid-form">
+    <label>
+      <span>Meio de propagação / via de exposição</span>
+      <input name="ltcat_meio_propagacao" value="{{ risk.ltcat_meio_propagacao if risk else '' }}" placeholder="Ex.: Ar, contato direto, superfície, ambiente de trabalho">
+    </label>
+
+    <label>
+      <span>Periodicidade / jornada de exposição</span>
+      <input name="ltcat_periodicidade_jornada" value="{{ risk.ltcat_periodicidade_jornada if risk else 'Mensal (<= 4 horas < 10% jornada)' }}" placeholder="Ex.: Habitual e intermitente / Mensal / Diário">
+    </label>
+
+    <label>
+      <span>Insalubridade</span>
+      <input name="ltcat_insalubridade" value="{{ risk.ltcat_insalubridade if risk else 'Não' }}" placeholder="Ex.: Sim / Não">
+    </label>
+
+    <label>
+      <span>Grau de insalubridade</span>
+      <input name="ltcat_grau_insalubridade" value="{{ risk.ltcat_grau_insalubridade if risk else 'Não aplicável' }}" placeholder="Ex.: Mínimo / Médio / Máximo / Não aplicável">
+    </label>
+
+    <label>
+      <span>Aposentadoria especial</span>
+      <input name="ltcat_aposentadoria_especial" value="{{ risk.ltcat_aposentadoria_especial if risk else 'Não' }}" placeholder="Ex.: Sim / Não">
+    </label>
+
+    <label class="span-2">
+      <span>Enquadramento técnico</span>
+      <textarea name="ltcat_enquadramento_tecnico" rows="3" placeholder="Parecer técnico sobre o enquadramento do risco para LTCAT.">{{ risk.ltcat_enquadramento_tecnico if risk else '' }}</textarea>
+    </label>
+
+    <label class="span-2">
+      <span>Parecer previdenciário</span>
+      <textarea name="ltcat_parecer_previdenciario" rows="3" placeholder="Parecer previdenciário relacionado ao risco.">{{ risk.ltcat_parecer_previdenciario if risk else '' }}</textarea>
+    </label>
+  </div>
+</div>
+

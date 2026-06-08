@@ -6,7 +6,7 @@
   <div class="panel-title split">
     <div>
       <h2>Gerar laudos completos</h2>
-      <p>Preencha os dados da empresa, escolha cada setor e marque os riscos e exames que entrarão no PGR/PCMSO.</p>
+      <p>Preencha os dados da empresa, escolha cada setor e marque os riscos e exames que entrarão no PGR, PCMSO e LTCAT.</p>
     </div>
     <input class="search" id="pgrSectorSearch" placeholder="Buscar por setor, cargo ou risco...">
   </div>
@@ -15,7 +15,7 @@
     <div class="company-box">
       <div>
         <h3>Dados do documento</h3>
-        <p>Essas informações preencherão os campos de empresa, CNPJ e vigência no PGR.</p>
+        <p>Essas informações preencherão os campos de empresa, CNPJ e vigência nos laudos completos.</p>
       </div>
       <div class="company-grid">
         <label>
@@ -35,6 +35,64 @@
           <input name="data_final" value="{{ next_year }}" placeholder="Ex.: 06/2027">
         </label>
       </div>
+
+      <details class="details-box">
+        <summary>Dados complementares para LTCAT / identificação da empresa</summary>
+        <div class="company-grid details-grid">
+          <label>
+            <span>Endereço</span>
+            <input name="endereco" placeholder="Endereço da empresa">
+          </label>
+          <label>
+            <span>Bairro / Cidade</span>
+            <input name="bairro_cidade" placeholder="Bairro / Cidade">
+          </label>
+          <label>
+            <span>CEP</span>
+            <input name="cep" placeholder="CEP">
+          </label>
+          <label>
+            <span>CNAE</span>
+            <input name="cnae" placeholder="CNAE principal">
+          </label>
+          <label class="span-2">
+            <span>Descrição da atividade</span>
+            <input name="descricao_atividade" placeholder="Descrição da atividade principal">
+          </label>
+          <label>
+            <span>Grau de risco</span>
+            <input name="grau_risco" placeholder="Ex.: 1, 2, 3 ou 4">
+          </label>
+          <label>
+            <span>Funcionários</span>
+            <input name="funcionarios" placeholder="Se ficar vazio, calcula pelos cargos selecionados">
+          </label>
+          <label>
+            <span>CNAE secundário</span>
+            <input name="cnae_secundario" placeholder="Opcional">
+          </label>
+          <label>
+            <span>Grau de risco secundário</span>
+            <input name="grau_risco_secundario" placeholder="Opcional">
+          </label>
+          <label class="span-2">
+            <span>Descrição da atividade secundária</span>
+            <input name="descricao_atividade_secundaria" placeholder="Opcional">
+          </label>
+          <label>
+            <span>E-mail</span>
+            <input name="email" placeholder="E-mail da empresa">
+          </label>
+          <label>
+            <span>Fone</span>
+            <input name="fone" placeholder="Telefone da empresa">
+          </label>
+          <label>
+            <span>Data da avaliação / criação do laudo</span>
+            <input name="data_avaliacao" placeholder="Se ficar vazio, usa a data atual/início da vigência">
+          </label>
+        </div>
+      </details>
     </div>
 
     <div class="toolbar toolbar-main">
@@ -42,6 +100,7 @@
       <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', false); togglePgrRisks(false); togglePgrExams(false)">Limpar seleção</button>
       <button class="btn primary big" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">Gerar PGR completo</button>
       <button class="btn primary third big" type="submit" formaction="{{ url_for('generate_complete_pcmso') }}">Gerar PCMSO completo</button>
+      <button class="btn primary danger-alt big" type="submit" formaction="{{ url_for('generate_complete_ltcat') }}">Gerar LTCAT completo</button>
     </div>
 
     {% if sectors and risks %}
@@ -52,12 +111,13 @@
               <input type="checkbox" name="pgr_sector_ids" value="{{ sector.id }}">
               <div>
                 <strong>{{ sector.setor }}</strong>
-                <span>Cargos: {{ sector.cargos|map(attribute='cargo')|join(', ') }}</span>
+                <span>{{ sector.grupo_nome }} · Cargos: {{ sector.cargos|map(attribute='cargo')|join(', ') }}</span>
               </div>
             </label>
 
             <div class="nested-risks">
               <span class="nested-title">Riscos que entrarão neste setor</span>
+              <small class="hint">Na LTCAT serão impressos somente FÍSICO, QUÍMICO e BIOLÓGICO. Se o setor não tiver esses tipos, sairá AUSÊNCIA DE RISCOS.</small>
               <div class="nested-grid">
                 {% for risk in risks %}
                   <label class="mini-check">

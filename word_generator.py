@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from docx import Document
+from docx.table import Table
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import RGBColor
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -19,6 +21,7 @@ TEMPLATE_DESCRITIVO_SETOR_PATH = BASE_DIR / "modelos" / "modelo_descritivo_setor
 TEMPLATE_PGR_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_pgr_completo.docx"
 TEMPLATE_PCMSO_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_pcmso_completo.docx"
 TEMPLATE_RISCOS_PCMSO_PATH = BASE_DIR / "modelos" / "modelo_riscos_pcmso.docx"
+TEMPLATE_LTCAT_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_ltcat_completo.docx"
 
 TIPO_RISCO_COLORS = {
     "ACIDENTE(MECÂNICO)": "0066FF",
@@ -1081,6 +1084,387 @@ def generate_complete_pcmso_docx(
         "{{DATAATUAL}}": data_atual,
         "{{DATAFINAL}}": data_final,
     })
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path))
+    return output_path
+
+
+# ---------------------------------------------------------------------------
+# LTCAT COMPLETO
+# ---------------------------------------------------------------------------
+
+TIPOS_RISCO_LTCAT = {"FÍSICO", "QUÍMICO", "BIOLÓGICO"}
+DEFAULT_LTCAT_ENQUADRAMENTO = (
+    "Considerando a atividade que pode causar é recomendado adotar medidas preventivas "
+    "até que as avaliações quantitativas sejam realizadas."
+)
+DEFAULT_LTCAT_PARECER = (
+    "Considerando a atividade que pode causar é recomendado adotar medidas preventivas "
+    "até que as avaliações quantitativas sejam realizadas."
+)
+
+
+def _ltcat_table_has_text(table, text: str) -> bool:
+    return text in "\n".join(cell.text for row in table.rows for cell in row.cells)
+
+
+def _ltcat_replace_in_table(table, replacements: Mapping[str, str]) -> None:
+    clean = {key: "" if value is None else str(value) for key, value in replacements.items()}
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                _replace_text_in_paragraph(paragraph, clean)
+
+
+def _ltcat_set_cell_text(cell, text_value: Any) -> None:
+    text_value = "" if text_value is None else str(text_value)
+    if not cell.paragraphs:
+        paragraph = cell.add_paragraph()
+        paragraph.add_run(text_value)
+        return
+    paragraph = cell.paragraphs[0]
+    if paragraph.runs:
+        paragraph.runs[0].text = text_value
+        for run in paragraph.runs[1:]:
+            run.text = ""
+    else:
+        paragraph.add_run(text_value)
+    for extra in cell.paragraphs[1:]:
+        for run in extra.runs:
+            run.text = ""
+
+
+def _ltcat_shade_cell(cell, fill: str | None) -> None:
+    if not fill:
+        return
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:fill"), fill)
+
+
+def _ltcat_set_cell_font_color(cell, rgb: str = "000000") -> None:
+    for paragraph in cell.paragraphs:
+        for run in paragraph.runs:
+            run.font.color.rgb = RGBColor.from_string(rgb)
+
+
+def _ltcat_insert_tbl_before(anchor_table, tbl_element) -> None:
+    anchor_table._tbl.addprevious(tbl_element)
+
+
+def _ltcat_remove_table(table) -> None:
+    table._tbl.getparent().remove(table._tbl)
+
+
+def _ltcat_insert_blank_before(anchor_table) -> None:
+    p = OxmlElement("w:p")
+    p_pr = OxmlElement("w:pPr")
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:before"), "0")
+    spacing.set(qn("w:after"), "0")
+    p_pr.append(spacing)
+    p.append(p_pr)
+    anchor_table._tbl.addprevious(p)
+
+
+def _ltcat_insert_page_break_before(anchor_table) -> None:
+    p = OxmlElement("w:p")
+    p_pr = OxmlElement("w:pPr")
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:before"), "0")
+    spacing.set(qn("w:after"), "0")
+    p_pr.append(spacing)
+    p.append(p_pr)
+    r = OxmlElement("w:r")
+    br = OxmlElement("w:br")
+    br.set(qn("w:type"), "page")
+    r.append(br)
+    p.append(r)
+    anchor_table._tbl.addprevious(p)
+
+
+def _ltcat_sector_cargos_text(sector: Mapping[str, Any]) -> str:
+    return _sector_cargos_text(sector).upper()
+
+
+def _ltcat_company_dict(empresa: str, cnpj: str, data_atual: str, data_final: str, extra: Mapping[str, Any] | None = None) -> dict[str, str]:
+    extra = extra or {}
+    return {
+        "empresa": str(empresa or "").strip(),
+        "cnpj": str(cnpj or "").strip(),
+        "data_atual": str(data_atual or "").strip(),
+        "data_final": str(data_final or "").strip(),
+        "endereco": str(extra.get("endereco", "") or "").strip(),
+        "bairro_cidade": str(extra.get("bairro_cidade", "") or "").strip(),
+        "cep": str(extra.get("cep", "") or "").strip(),
+        "cnae": str(extra.get("cnae", "") or "").strip(),
+        "descricao_atividade": str(extra.get("descricao_atividade", "") or "").strip(),
+        "grau_risco": str(extra.get("grau_risco", "") or "").strip(),
+        "cnae_secundario": str(extra.get("cnae_secundario", "") or "").strip(),
+        "descricao_atividade_secundaria": str(extra.get("descricao_atividade_secundaria", "") or "").strip(),
+        "grau_risco_secundario": str(extra.get("grau_risco_secundario", "") or "").strip(),
+        "funcionarios": str(extra.get("funcionarios", "") or "").strip(),
+        "email": str(extra.get("email", "") or "").strip(),
+        "fone": str(extra.get("fone", "") or "").strip(),
+        "data_avaliacao": str(extra.get("data_avaliacao", "") or data_atual or "").strip(),
+    }
+
+
+def _ltcat_total_funcionarios(sectors: list[Mapping[str, Any]]) -> str:
+    total = 0
+    for sector in sectors:
+        for cargo in sector.get("cargos", []) or []:
+            try:
+                total += int(str(cargo.get("n_func", "")).strip() or "0")
+            except ValueError:
+                pass
+    return str(total) if total else ""
+
+
+def _ltcat_fill_company_table(doc: Document, company: Mapping[str, str], sectors: list[Mapping[str, Any]]) -> None:
+    for table in doc.tables:
+        if len(table.rows) >= 14 and table.cell(0, 0).text.strip().upper() == "EMPRESA":
+            funcionarios = company.get("funcionarios") or _ltcat_total_funcionarios(sectors)
+            values_by_label = {
+                "EMPRESA": company.get("empresa", ""),
+                "ENDEREÇO": company.get("endereco", ""),
+                "BAIRRO / CIDADE": company.get("bairro_cidade", ""),
+                "CEP": company.get("cep", ""),
+                "CNPJ": company.get("cnpj", ""),
+                "CNAE": company.get("cnae", ""),
+                "GRAU DE RISCO": company.get("grau_risco", ""),
+                "CNAE (SECUNDÁRIO)": company.get("cnae_secundario", ""),
+                "GRAU DE RISCO (SECUNDÁRIO)": company.get("grau_risco_secundario", ""),
+                "FUNCIONÁRIOS": funcionarios,
+                "VIGÊNCIA": f"{company.get('data_atual','')} – {company.get('data_final','')}",
+                "EMAIL": company.get("email", ""),
+                "FONE": company.get("fone", ""),
+            }
+            descricao_seen = 0
+            for row in table.rows:
+                label = row.cells[0].text.strip().upper()
+                if label == "DESCRIÇÃO DA ATIVIDADE":
+                    descricao_seen += 1
+                    value = company.get("descricao_atividade_secundaria", "") if descricao_seen == 2 else company.get("descricao_atividade", "")
+                    _ltcat_set_cell_text(row.cells[1], value)
+                elif label in values_by_label:
+                    _ltcat_set_cell_text(row.cells[1], values_by_label[label])
+            break
+
+
+def _ltcat_fill_relacao_funcoes(doc: Document, sectors: list[Mapping[str, Any]], data_atual: str, data_final: str) -> None:
+    relation_tables = [t for t in doc.tables if _ltcat_table_has_text(t, "{{CARGO}}") and _ltcat_table_has_text(t, "{{CBOCARGO}}")]
+    if not relation_tables:
+        return
+    anchor = relation_tables[0]
+    template_tbl = deepcopy(anchor._tbl)
+    for index, sector in enumerate(sectors):
+        new_tbl = deepcopy(template_tbl)
+        _ltcat_insert_tbl_before(anchor, new_tbl)
+        table = Table(new_tbl, doc)
+        _fill_relacao_table(table._tbl, sector, data_atual, data_final)
+        if index < len(sectors) - 1:
+            _ltcat_insert_blank_before(anchor)
+    _ltcat_remove_table(anchor)
+
+
+def _ltcat_fill_descritivo_setores(doc: Document, sectors: list[Mapping[str, Any]]) -> None:
+    desc_tables = [t for t in doc.tables if _ltcat_table_has_text(t, "PAREDE:") and _ltcat_table_has_text(t, "{{SETOR}}")]
+    if not desc_tables:
+        return
+    anchor = desc_tables[0]
+    template_tbl = deepcopy(anchor._tbl)
+    for index, sector in enumerate(sectors):
+        new_tbl = deepcopy(template_tbl)
+        _ltcat_insert_tbl_before(anchor, new_tbl)
+        table = Table(new_tbl, doc)
+        _ltcat_replace_in_table(table, {"{{SETOR}}": str(sector.get("setor", ""))})
+        if index < len(sectors) - 1:
+            _ltcat_insert_blank_before(anchor)
+    _ltcat_remove_table(anchor)
+
+
+def _ltcat_risk_from_common(risk: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(risk.get("id", "")),
+        "risco": str(risk.get("risco", "") or ""),
+        "tipo_risco": _normalize_option(risk.get("tipo_risco")),
+        "meio_propagacao": str(risk.get("ltcat_meio_propagacao") or risk.get("fontes_circunstancias") or ""),
+        "epis": str(risk.get("epis", "") or ""),
+        "epcs": str(risk.get("epcs", "") or ""),
+        "insalubridade": str(risk.get("ltcat_insalubridade") or "Não"),
+        "grau_insalubridade": str(risk.get("ltcat_grau_insalubridade") or "Não aplicável"),
+        "aposentadoria_especial": str(risk.get("ltcat_aposentadoria_especial") or "Não"),
+        "enquadramento_tecnico": str(risk.get("ltcat_enquadramento_tecnico") or DEFAULT_LTCAT_ENQUADRAMENTO),
+        "parecer_previdenciario": str(risk.get("ltcat_parecer_previdenciario") or DEFAULT_LTCAT_PARECER),
+        "periodicidade_jornada": str(risk.get("ltcat_periodicidade_jornada") or "Mensal (<= 4 horas < 10% jornada)"),
+    }
+
+
+def _ltcat_set_repeated_cells(row, col_start: int, col_end: int, text_value: Any) -> None:
+    for col in range(col_start, min(col_end + 1, len(row.cells))):
+        _ltcat_set_cell_text(row.cells[col], text_value)
+
+
+def _ltcat_fill_single_risk_block(table, start: int, risk: Mapping[str, Any], data_avaliacao: str) -> None:
+    tipo = _normalize_option(risk.get("tipo_risco"))
+    fill = TIPO_RISCO_COLORS.get(tipo)
+
+    def row(offset: int):
+        return table.rows[start + offset]
+
+    _ltcat_set_repeated_cells(row(0), 3, 5, tipo)
+    for col in range(3, min(6, len(row(0).cells))):
+        _ltcat_shade_cell(row(0).cells[col], fill)
+        _ltcat_set_cell_font_color(row(0).cells[col], "000000")
+
+    _ltcat_set_repeated_cells(row(1), 3, 5, risk.get("risco", ""))
+    _ltcat_set_repeated_cells(row(2), 3, 5, risk.get("meio_propagacao", ""))
+    _ltcat_set_repeated_cells(row(8), 3, 5, risk.get("epis", ""))
+    _ltcat_set_repeated_cells(row(9), 3, 5, risk.get("epcs", ""))
+
+    if risk.get("periodicidade_jornada") and len(row(12).cells) > 1:
+        _ltcat_set_cell_text(row(12).cells[1], risk.get("periodicidade_jornada", ""))
+    _ltcat_set_repeated_cells(row(12), 5, 5, data_avaliacao)
+
+    _ltcat_set_repeated_cells(row(14), 2, 5, risk.get("insalubridade", ""))
+    _ltcat_set_repeated_cells(row(15), 2, 5, risk.get("grau_insalubridade", ""))
+    _ltcat_set_repeated_cells(row(16), 2, 5, risk.get("enquadramento_tecnico", ""))
+    _ltcat_set_repeated_cells(row(18), 2, 5, risk.get("aposentadoria_especial", ""))
+    _ltcat_set_repeated_cells(row(19), 2, 5, risk.get("parecer_previdenciario", ""))
+
+    replacements = {
+        "{{TIPO DE RISCO}}": tipo,
+        "{{risco}}": risk.get("risco", ""),
+        "{{meiodepropagacao}}": risk.get("meio_propagacao", ""),
+        "{{EPIs}}": risk.get("epis", ""),
+        "{{EPCs}}": risk.get("epcs", ""),
+        "{{datacriacaolaudo}}": data_avaliacao,
+        "{{simounao}}": risk.get("insalubridade", ""),
+        "{{graudeinsalubridade}}": risk.get("grau_insalubridade", ""),
+    }
+    for off in range(0, 25):
+        if start + off >= len(table.rows):
+            continue
+        for cell in table.rows[start + off].cells:
+            for paragraph in cell.paragraphs:
+                _replace_text_in_paragraph(paragraph, replacements)
+
+
+def _ltcat_fill_risk_table(table, sector: Mapping[str, Any], risks: list[Mapping[str, Any]], data_avaliacao: str) -> None:
+    _ltcat_replace_in_table(table, {
+        "{{SETOR}}": str(sector.get("setor", "")),
+        "{{CARGOS}}": _ltcat_sector_cargos_text(sector),
+    })
+    original_block_rows = [deepcopy(table.rows[i]._tr) for i in range(4, len(table.rows))]
+    for _ in range(max(0, len(risks) - 1)):
+        for tr in original_block_rows:
+            table._tbl.append(deepcopy(tr))
+    block_size = len(original_block_rows)
+    for index, risk in enumerate(risks):
+        _ltcat_fill_single_risk_block(table, 4 + index * block_size, risk, data_avaliacao)
+
+
+def _ltcat_fill_riscos_area(doc: Document, groups: list[Mapping[str, Any]], data_avaliacao: str) -> None:
+    absence_tables = [t for t in doc.tables if _ltcat_table_has_text(t, "AUSÊNCIA DE RISCOS") and _ltcat_table_has_text(t, "{{SETOR}}")]
+    risk_tables = [t for t in doc.tables if _ltcat_table_has_text(t, "{{meiodepropagacao}}") and _ltcat_table_has_text(t, "{{graudeinsalubridade}}")]
+    if not absence_tables or not risk_tables:
+        return
+    absence_anchor = absence_tables[0]
+    risk_anchor = risk_tables[0]
+    absence_template = deepcopy(absence_anchor._tbl)
+    risk_template = deepcopy(risk_anchor._tbl)
+
+    for index, group in enumerate(groups):
+        sector = group["sector"]
+        if index > 0:
+            _ltcat_insert_page_break_before(absence_anchor)
+        raw_risks = group.get("risks") or []
+        risks = [_ltcat_risk_from_common(risk) for risk in raw_risks]
+        risks = [risk for risk in risks if _normalize_option(risk.get("tipo_risco")) in TIPOS_RISCO_LTCAT]
+        if risks:
+            new_tbl = deepcopy(risk_template)
+            _ltcat_insert_tbl_before(absence_anchor, new_tbl)
+            table = Table(new_tbl, doc)
+            _ltcat_fill_risk_table(table, sector, risks, data_avaliacao)
+        else:
+            new_tbl = deepcopy(absence_template)
+            _ltcat_insert_tbl_before(absence_anchor, new_tbl)
+            table = Table(new_tbl, doc)
+            _ltcat_replace_in_table(table, {
+                "{{SETOR}}": str(sector.get("setor", "")),
+                "{{CARGOS}}": _ltcat_sector_cargos_text(sector),
+            })
+    _ltcat_remove_table(absence_anchor)
+    _ltcat_remove_table(risk_anchor)
+
+
+def _ltcat_fill_signature(doc: Document, company: Mapping[str, str]) -> None:
+    for table in doc.tables:
+        if _ltcat_table_has_text(table, "RESPONSÁVEL LEGAL DA EMPRESA") and _ltcat_table_has_text(table, "{{empresa}}"):
+            _ltcat_replace_in_table(table, {
+                "{{empresa}}": company.get("empresa", ""),
+                "{{datacriacaolaudo}}": company.get("data_avaliacao") or company.get("data_atual", ""),
+            })
+
+
+def _sanitize_ltcat_groups(groups: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    clean_groups: list[dict[str, Any]] = []
+    for group in groups:
+        sector = _sanitize_sector(group.get("sector") or {})
+        risks = [risk for risk in (group.get("risks") or []) if risk]
+        if sector.get("setor"):
+            clean_groups.append({"sector": sector, "risks": risks})
+    return clean_groups
+
+
+def generate_complete_ltcat_docx(
+    groups: Iterable[Mapping[str, Any]],
+    output_path: str | Path,
+    empresa: str,
+    cnpj: str,
+    data_atual: str | None = None,
+    data_final: str | None = None,
+    company_extra: Mapping[str, Any] | None = None,
+) -> Path:
+    groups = _sanitize_ltcat_groups(groups)
+    if not groups:
+        raise ValueError("Selecione pelo menos um setor para gerar o LTCAT completo.")
+    empresa = str(empresa or "").strip()
+    cnpj = str(cnpj or "").strip()
+    if not empresa:
+        raise ValueError("Preencha o nome da empresa.")
+    if not cnpj:
+        raise ValueError("Preencha o CNPJ.")
+    if not TEMPLATE_LTCAT_COMPLETO_PATH.exists():
+        raise FileNotFoundError(f"Modelo LTCAT completo não encontrado: {TEMPLATE_LTCAT_COMPLETO_PATH}")
+
+    data_atual = (data_atual or datetime.now().strftime("%m/%Y")).strip()
+    data_final = (data_final or "").strip()
+    company = _ltcat_company_dict(empresa, cnpj, data_atual, data_final, company_extra)
+
+    doc = Document(str(TEMPLATE_LTCAT_COMPLETO_PATH))
+    sectors = [group["sector"] for group in groups]
+    data_avaliacao = company.get("data_avaliacao") or data_atual
+
+    _replace_doc_placeholders(doc, {
+        "{{EMPRESA}}": company.get("empresa", ""),
+        "{{empresa}}": company.get("empresa", ""),
+        "{{CNPJ}}": company.get("cnpj", ""),
+        "{{DATAATUAL}}": data_atual,
+        "{{DATAFINAL}}": data_final,
+        "{{datacriacaolaudo}}": data_avaliacao,
+    })
+    _ltcat_fill_company_table(doc, company, sectors)
+    _ltcat_fill_relacao_funcoes(doc, sectors, data_atual, data_final)
+    _ltcat_fill_descritivo_setores(doc, sectors)
+    _ltcat_fill_riscos_area(doc, groups, data_avaliacao)
+    _ltcat_fill_signature(doc, company)
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
