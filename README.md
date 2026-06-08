@@ -1,6 +1,6 @@
-# Site de Cadastro de Riscos SST - PGR Completo
+# Site de Cadastro de Riscos SST - PGR e PCMSO
 
-Sistema em Flask para cadastrar riscos, setores e cargos e gerar o **PGR completo em Word** usando o modelo principal.
+Sistema em Flask para cadastrar riscos, setores/cargos e exames, gerando documentos Word a partir dos modelos de SST.
 
 ## O que esta versão faz
 
@@ -10,6 +10,7 @@ Sistema em Flask para cadastrar riscos, setores e cargos e gerar o **PGR complet
 - Mantém os riscos cadastrados no sistema.
 - Permite cadastrar, editar e excluir setores/cargos.
 - Permite apagar todos os setores/cargos de uma vez, sem apagar os riscos.
+- Permite cadastrar, editar e excluir exames do PCMSO.
 - Gera o PGR completo preenchendo:
   - Empresa;
   - CNPJ;
@@ -19,19 +20,26 @@ Sistema em Flask para cadastrar riscos, setores e cargos e gerar o **PGR complet
   - Descritivo dos setores;
   - Inventário/Risco PGR por setor;
   - Plano de Ação.
+- Gera o PCMSO completo preenchendo:
+  - Empresa;
+  - CNPJ;
+  - Datas de vigência;
+  - Relação Função x Atividade;
+  - Riscos por setor;
+  - Exames recomendados por setor.
 
 ## Regras mantidas
 
-- Cada setor do Inventário/Risco PGR começa em nova página.
 - Os riscos de cada setor saem um abaixo do outro.
 - A frase “NENHUM FATOR DE RISCO PSICOSSOCIAL...” aparece somente quando o setor **não** tiver risco do tipo `ERGONÔMICO PSICOSSOCIAL`.
 - Quando houver risco psicossocial no setor, essa frase é removida.
-- No Plano de Ação:
+- No Plano de Ação do PGR:
   - Riscos comuns usam `Data atual / início da vigência` como **Prazo de Implantação**.
   - Riscos comuns usam `Data final da vigência` como **Prazo Reavaliação**.
   - Riscos do tipo `ERGONÔMICO PSICOSSOCIAL` usam **30 DIAS** e **180 DIAS**.
 - As células coloridas continuam com texto preto.
-- O PCMSO não entra no PGR completo nesta etapa.
+- No PCMSO, os exames selecionados por setor saem um abaixo do outro.
+- Os campos Admissional, Periódico, Retorno ao Trabalho, Mudança de Risco e Demissional dos exames são campos de texto livre.
 
 ## Como rodar localmente
 

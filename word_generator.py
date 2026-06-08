@@ -17,6 +17,8 @@ TEMPLATE_PCMSO_PATH = BASE_DIR / "modelos" / "modelo_pcmso.docx"
 TEMPLATE_RELACAO_PATH = BASE_DIR / "modelos" / "modelo_relacao_funcao_atividade.docx"
 TEMPLATE_DESCRITIVO_SETOR_PATH = BASE_DIR / "modelos" / "modelo_descritivo_setor.docx"
 TEMPLATE_PGR_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_pgr_completo.docx"
+TEMPLATE_PCMSO_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_pcmso_completo.docx"
+TEMPLATE_RISCOS_PCMSO_PATH = BASE_DIR / "modelos" / "modelo_riscos_pcmso.docx"
 
 TIPO_RISCO_COLORS = {
     "ACIDENTE(MECÂNICO)": "0066FF",
@@ -875,6 +877,210 @@ def generate_complete_pgr_docx(
     _compact_first_page_date_block(doc)
     _compact_known_static_spacers(doc)
 
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path))
+    return output_path
+
+
+# ---------------------------------------------------------------------------
+# PCMSO COMPLETO E BLOCO DE RISCOS/EXAMES
+# ---------------------------------------------------------------------------
+
+
+def _fill_pcmso_risk_rows(risk_rows: list, risk: Mapping[str, Any]) -> None:
+    if len(risk_rows) != 4:
+        raise ValueError("O bloco de risco do PCMSO precisa manter 4 linhas.")
+    tipo = risk.get("tipo_risco", "")
+    descricao = risk.get("descricao_agente") or risk.get("risco", "")
+    possiveis_lesoes = risk.get("possiveis_lesoes", "")
+    fontes = risk.get("fontes_circunstancias") or "Durante o processo de trabalho."
+
+    _colored_value(_row_cell(risk_rows[0], 1), tipo, TIPO_RISCO_COLORS)
+    _set_cell_text(_row_cell(risk_rows[1], 1), descricao)
+    _set_cell_text(_row_cell(risk_rows[2], 1), possiveis_lesoes)
+    _set_cell_text(_row_cell(risk_rows[3], 1), fontes)
+
+
+def _fill_pcmso_exam_row(row_xml, exam: Mapping[str, Any]) -> None:
+    cells = row_xml.findall(qn("w:tc"))
+    if len(cells) < 7:
+        raise ValueError("A linha de exame do modelo PCMSO precisa manter 7 células.")
+    values = [
+        exam.get("exame", ""),
+        exam.get("periodicidade", ""),
+        exam.get("admissional", ""),
+        exam.get("periodico", ""),
+        exam.get("retorno", ""),
+        exam.get("mudanca", ""),
+        exam.get("demissional", ""),
+    ]
+    for cell, value in zip(cells[:7], values):
+        _set_cell_text(cell, value)
+
+
+def _sanitize_exam(exam: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(exam.get("id", "")).strip(),
+        "exame": str(exam.get("exame", "")).strip(),
+        "periodicidade": str(exam.get("periodicidade", "")).strip(),
+        "admissional": str(exam.get("admissional", "")).strip(),
+        "periodico": str(exam.get("periodico", "")).strip(),
+        "retorno": str(exam.get("retorno", "")).strip(),
+        "mudanca": str(exam.get("mudanca", "")).strip(),
+        "demissional": str(exam.get("demissional", "")).strip(),
+    }
+
+
+def _sanitize_pcmso_groups(groups: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    clean_groups: list[dict[str, Any]] = []
+    for group in groups:
+        sector = _sanitize_sector(group.get("sector") or {})
+        risks = [risk for risk in (group.get("risks") or []) if risk]
+        exams = [_sanitize_exam(exam) for exam in (group.get("exams") or []) if exam]
+        if sector.get("setor") and risks:
+            clean_groups.append({"sector": sector, "risks": risks, "exams": exams})
+    return clean_groups
+
+
+def _fill_pcmso_riscos_sector_table(table_xml, sector: Mapping[str, Any], risks: list[Mapping[str, Any]], exams: list[Mapping[str, Any]]) -> None:
+    rows = table_xml.findall(qn("w:tr"))
+    if len(rows) < 12:
+        raise ValueError("O modelo riscos PCMSO precisa manter 12 linhas.")
+    if not risks:
+        raise ValueError("Cada setor selecionado precisa ter pelo menos um risco.")
+
+    _set_cell_text(_row_cell(rows[0], 0), sector.get("setor", ""))
+    _set_cell_text(_row_cell(rows[2], 0), _sector_cargos_text(sector))
+
+    risk_template_rows = [deepcopy(row) for row in rows[4:8]]
+    _fill_pcmso_risk_rows(rows[4:8], risks[0])
+
+    phrase_row = rows[8]
+    insertion_index = list(table_xml).index(phrase_row)
+    for risk in risks[1:]:
+        block_rows = [deepcopy(row) for row in risk_template_rows]
+        _fill_pcmso_risk_rows(block_rows, risk)
+        for block_row in block_rows:
+            table_xml.insert(insertion_index, block_row)
+            insertion_index += 1
+
+    has_psychosocial = any(_normalize_option(risk.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for risk in risks)
+    # A frase fica somente quando NÃO existe risco ERGONÔMICO PSICOSSOCIAL no setor.
+    if has_psychosocial:
+        table_xml.remove(phrase_row)
+
+    rows = table_xml.findall(qn("w:tr"))
+    exam_template_row = None
+    for row in rows:
+        if "{{exame}}" in _xml_text(row):
+            exam_template_row = row
+            break
+    if exam_template_row is None:
+        raise ValueError("O modelo riscos PCMSO precisa ter uma linha de exame com {{exame}}.")
+    exam_template_copy = deepcopy(exam_template_row)
+    insert_index = list(table_xml).index(exam_template_row)
+    table_xml.remove(exam_template_row)
+
+    if not exams:
+        exams = [{"exame": "", "periodicidade": "", "admissional": "", "periodico": "", "retorno": "", "mudanca": "", "demissional": ""}]
+    for exam in exams:
+        row = deepcopy(exam_template_copy)
+        _fill_pcmso_exam_row(row, exam)
+        table_xml.insert(insert_index, row)
+        insert_index += 1
+
+
+def _build_pcmso_riscos_elements(template_table_xml, groups: list[Mapping[str, Any]], page_break_between_sectors: bool = True) -> list:
+    elements: list = []
+    for index, group in enumerate(groups):
+        if index > 0 and page_break_between_sectors:
+            elements.append(_page_break_paragraph())
+        table = deepcopy(template_table_xml)
+        _fill_pcmso_riscos_sector_table(table, group["sector"], group["risks"], group.get("exams", []))
+        elements.append(table)
+    return elements
+
+
+def generate_riscos_pcmso_docx(groups: Iterable[Mapping[str, Any]], output_path: str | Path) -> Path:
+    groups = _sanitize_pcmso_groups(groups)
+    if not groups:
+        raise ValueError("Selecione pelo menos um setor e um risco para gerar o bloco de riscos do PCMSO.")
+    if not TEMPLATE_RISCOS_PCMSO_PATH.exists():
+        raise FileNotFoundError(f"Modelo riscos PCMSO não encontrado: {TEMPLATE_RISCOS_PCMSO_PATH}")
+    doc = Document(str(TEMPLATE_RISCOS_PCMSO_PATH))
+    if not doc.tables:
+        raise ValueError("O modelo riscos PCMSO precisa ter uma tabela-modelo.")
+    body = doc._body._element
+    original_table_xml = doc.tables[0]._tbl
+    template_table_copy = deepcopy(original_table_xml)
+    body.remove(original_table_xml)
+    for element in _build_pcmso_riscos_elements(template_table_copy, groups):
+        _insert_before_section_or_end(body, element)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path))
+    return output_path
+
+
+def _remove_element(element) -> None:
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
+
+
+def _replace_pcmso_riscos_area(doc: Document, groups: list[Mapping[str, Any]]) -> None:
+    risco_table = _find_table_xml(doc, ["{{CARGOS}}", "{{TIPO DE RISCO}}", "{{risco}}"])
+    phrase_table = _find_table_xml(doc, ["NENHUM FATOR DE RISCO PSICOSSOCIAL"])
+    exams_table = _find_table_xml(doc, ["EXAMES RECOMENDADOS", "{{tempo de peridiocidade}}"])
+
+    template_doc = Document(str(TEMPLATE_RISCOS_PCMSO_PATH))
+    template_table = deepcopy(template_doc.tables[0]._tbl)
+    generated = [_page_break_paragraph()] + _build_pcmso_riscos_elements(template_table, groups)
+
+    parent = risco_table.getparent()
+    index = list(parent).index(risco_table)
+    _remove_element(risco_table)
+    _remove_element(phrase_table)
+    _remove_element(exams_table)
+    for offset, element in enumerate(generated):
+        parent.insert(index + offset, element)
+
+
+def generate_complete_pcmso_docx(
+    groups: Iterable[Mapping[str, Any]],
+    output_path: str | Path,
+    empresa: str,
+    cnpj: str,
+    data_atual: str | None = None,
+    data_final: str | None = None,
+) -> Path:
+    groups = _sanitize_pcmso_groups(groups)
+    if not groups:
+        raise ValueError("Selecione pelo menos um setor e um risco para gerar o PCMSO completo.")
+    empresa = str(empresa or "").strip()
+    cnpj = str(cnpj or "").strip()
+    if not empresa:
+        raise ValueError("Preencha o nome da empresa.")
+    if not cnpj:
+        raise ValueError("Preencha o CNPJ.")
+    if not TEMPLATE_PCMSO_COMPLETO_PATH.exists():
+        raise FileNotFoundError(f"Modelo PCMSO completo não encontrado: {TEMPLATE_PCMSO_COMPLETO_PATH}")
+    data_atual = (data_atual or datetime.now().strftime("%m/%Y")).strip()
+    data_final = (data_final or "").strip()
+
+    doc = Document(str(TEMPLATE_PCMSO_COMPLETO_PATH))
+    relation_table = _find_table_xml(doc, ["{{CARGO}}", "{{CBOCARGO}}", "{{N°FUNC}}", "{{DESCRIÇÃO ATIVIDADE}}"])
+    sectors = _unique_sectors_from_groups(groups)
+    _replace_xml_element_with(relation_table.getparent(), relation_table, _build_relacao_elements(relation_table, sectors, data_atual, data_final))
+    _replace_pcmso_riscos_area(doc, groups)
+
+    _replace_doc_placeholders(doc, {
+        "{{EMPRESA}}": empresa,
+        "{{CNPJ}}": cnpj,
+        "{{DATAATUAL}}": data_atual,
+        "{{DATAFINAL}}": data_final,
+    })
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))

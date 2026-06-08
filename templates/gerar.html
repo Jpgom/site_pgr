@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Gerar PGR completo{% endblock %}
+{% block title %}Gerar Laudos{% endblock %}
 
 {% block content %}
 <section class="panel">
   <div class="panel-title split">
     <div>
-      <h2>Gerar PGR completo</h2>
-      <p>Preencha os dados da empresa, escolha cada setor e marque os riscos que entrarão naquele setor. O Word final será preenchido direto no modelo completo do PGR.</p>
+      <h2>Gerar laudos completos</h2>
+      <p>Preencha os dados da empresa, escolha cada setor e marque os riscos e exames que entrarão no PGR/PCMSO.</p>
     </div>
     <input class="search" id="pgrSectorSearch" placeholder="Buscar por setor, cargo ou risco...">
   </div>
@@ -38,9 +38,10 @@
     </div>
 
     <div class="toolbar toolbar-main">
-      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', true); togglePgrRisks(true)">Selecionar tudo</button>
-      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', false); togglePgrRisks(false)">Limpar seleção</button>
+      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', true); togglePgrRisks(true); togglePgrExams(true)">Selecionar tudo</button>
+      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', false); togglePgrRisks(false); togglePgrExams(false)">Limpar seleção</button>
       <button class="btn primary big" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">Gerar PGR completo</button>
+      <button class="btn primary third big" type="submit" formaction="{{ url_for('generate_complete_pcmso') }}">Gerar PCMSO completo</button>
     </div>
 
     {% if sectors and risks %}
@@ -69,6 +70,23 @@
                 {% endfor %}
               </div>
             </div>
+
+            <div class="nested-risks nested-exams">
+              <span class="nested-title">Exames que entrarão neste setor no PCMSO</span>
+              <div class="nested-grid">
+                {% for exam in exams %}
+                  <label class="mini-check">
+                    <input class="pgr-exam-check" type="checkbox" name="sector_exam_ids_{{ sector.id }}" value="{{ exam.id }}">
+                    <span>
+                      <strong>{{ exam.exame }}</strong>
+                      <small>{{ exam.periodicidade }}</small>
+                    </span>
+                  </label>
+                {% else %}
+                  <div class="empty small-empty">Nenhum exame cadastrado. Cadastre exames para preencher o PCMSO.</div>
+                {% endfor %}
+              </div>
+            </div>
           </article>
         {% endfor %}
       </div>
@@ -77,6 +95,7 @@
         <span>Exportações avulsas para conferência:</span>
         <button class="btn ghost" type="submit" formaction="{{ url_for('generate_action_plan') }}">Plano de Ação</button>
         <button class="btn ghost" type="submit" formaction="{{ url_for('generate_risco_pgr') }}">Inventário/Risco PGR</button>
+        <button class="btn ghost" type="submit" formaction="{{ url_for('generate_riscos_pcmso') }}">Riscos/Exames PCMSO</button>
       </div>
     {% elif not sectors %}
       <div class="empty">

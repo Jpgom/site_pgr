@@ -83,3 +83,12 @@ function togglePgrRisks(checked) {
     }
   });
 }
+
+function togglePgrExams(checked) {
+  document.querySelectorAll('.pgr-exam-check').forEach((box) => {
+    const card = box.closest('.risk-card');
+    if (isVisible(card)) {
+      box.checked = checked;
+    }
+  });
+}

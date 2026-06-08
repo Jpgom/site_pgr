@@ -18,8 +18,10 @@ from word_generator import (
     TIPO_RISCO_COLORS,
     generate_action_plan_docx,
     generate_complete_pgr_docx,
+    generate_complete_pcmso_docx,
     generate_descritivo_setor_docx,
     generate_pcmso_docx,
+    generate_riscos_pcmso_docx,
     generate_pgr_docx,
     generate_relacao_funcao_atividade_docx,
 )
@@ -27,6 +29,7 @@ from word_generator import (
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data" / "riscos.json"
 SETORES_FILE = BASE_DIR / "data" / "setores.json"
+EXAMES_FILE = BASE_DIR / "data" / "exames.json"
 OUTPUT_DIR = BASE_DIR / "outputs"
 INSTANCE_DIR = BASE_DIR / "instance"
 
@@ -114,6 +117,35 @@ class Sector(db.Model):
         }
 
 
+class Exam(db.Model):
+    __tablename__ = "exams"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    exame = db.Column(db.String(255), nullable=False)
+    periodicidade = db.Column(db.String(120), default="")
+    admissional = db.Column(db.String(120), default="")
+    periodico = db.Column(db.String(120), default="")
+    retorno = db.Column(db.String(120), default="")
+    mudanca = db.Column(db.String(120), default="")
+    demissional = db.Column(db.String(120), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "exame": self.exame,
+            "periodicidade": self.periodicidade or "",
+            "admissional": self.admissional or "",
+            "periodico": self.periodico or "",
+            "retorno": self.retorno or "",
+            "mudanca": self.mudanca or "",
+            "demissional": self.demissional or "",
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+        }
+
+
 FORM_OPTIONS = {
     "tipos_risco": list(TIPO_RISCO_COLORS.keys()),
     "severidades": list(SEVERIDADE_COLORS.keys()),
@@ -163,6 +195,21 @@ def _migrate_json_files_if_needed() -> None:
             )
             if sector.setor:
                 db.session.merge(sector)
+
+    if Exam.query.count() == 0:
+        for item in _read_json_list(EXAMES_FILE):
+            exam = Exam(
+                id=item.get("id") or uuid.uuid4().hex,
+                exame=str(item.get("exame", "")).strip(),
+                periodicidade=str(item.get("periodicidade", "")).strip(),
+                admissional=str(item.get("admissional", "")).strip(),
+                periodico=str(item.get("periodico", "")).strip(),
+                retorno=str(item.get("retorno", "")).strip(),
+                mudanca=str(item.get("mudanca", "")).strip(),
+                demissional=str(item.get("demissional", "")).strip(),
+            )
+            if exam.exame:
+                db.session.merge(exam)
 
     db.session.commit()
 
@@ -222,6 +269,19 @@ def _form_to_sector(existing_id: str | None = None) -> dict[str, Any]:
     }
 
 
+def _form_to_exam(existing_id: str | None = None) -> dict[str, Any]:
+    return {
+        "id": existing_id or uuid.uuid4().hex,
+        "exame": _field("exame"),
+        "periodicidade": _field("periodicidade"),
+        "admissional": _field("admissional"),
+        "periodico": _field("periodico"),
+        "retorno": _field("retorno"),
+        "mudanca": _field("mudanca"),
+        "demissional": _field("demissional"),
+    }
+
+
 def _risk_from_dict(data: dict[str, Any], risk: Risk | None = None) -> Risk:
     risk = risk or Risk(id=data["id"])
     risk.risco = data["risco"]
@@ -246,6 +306,26 @@ def _sector_from_dict(data: dict[str, Any], sector: Sector | None = None) -> Sec
     sector.cargos = data.get("cargos", [])
     sector.updated_at = datetime.utcnow()
     return sector
+
+
+def _exam_from_dict(data: dict[str, Any], exam: Exam | None = None) -> Exam:
+    exam = exam or Exam(id=data["id"])
+    exam.exame = data["exame"]
+    exam.periodicidade = data.get("periodicidade", "")
+    exam.admissional = data.get("admissional", "")
+    exam.periodico = data.get("periodico", "")
+    exam.retorno = data.get("retorno", "")
+    exam.mudanca = data.get("mudanca", "")
+    exam.demissional = data.get("demissional", "")
+    exam.updated_at = datetime.utcnow()
+    return exam
+
+
+def _validate_exam(exam: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not exam.get("exame"):
+        errors.append("Preencha o nome do exame.")
+    return errors
 
 
 def _validate_risk(risk: dict[str, Any]) -> list[str]:
@@ -307,6 +387,10 @@ def _sorted_sectors() -> list[dict[str, Any]]:
     return [sector.to_dict() for sector in Sector.query.order_by(Sector.setor.asc()).all()]
 
 
+def _sorted_exams() -> list[dict[str, Any]]:
+    return [exam.to_dict() for exam in Exam.query.order_by(Exam.exame.asc()).all()]
+
+
 def _selected_risks() -> list[dict[str, Any]]:
     selected_ids = request.form.getlist("risk_ids")
     if not selected_ids:
@@ -331,6 +415,7 @@ def _selected_sector_risk_groups() -> tuple[list[dict[str, Any]], list[str]]:
     selected_sector_ids = request.form.getlist("pgr_sector_ids")
     risks = {risk.id: risk.to_dict() for risk in Risk.query.all()}
     sectors = {sector.id: sector.to_dict() for sector in Sector.query.all()}
+    exams = {exam.id: exam.to_dict() for exam in Exam.query.all()}
 
     groups: list[dict[str, Any]] = []
     errors: list[str] = []
@@ -344,11 +429,13 @@ def _selected_sector_risk_groups() -> tuple[list[dict[str, Any]], list[str]]:
         if not sector:
             continue
         risk_ids = request.form.getlist(f"sector_risk_ids_{sector_id}")
+        exam_ids = request.form.getlist(f"sector_exam_ids_{sector_id}")
         selected_risks = [risks[risk_id] for risk_id in risk_ids if risk_id in risks]
+        selected_exams = [exams[exam_id] for exam_id in exam_ids if exam_id in exams]
         if not selected_risks:
             errors.append(f"Selecione pelo menos um risco para o setor: {sector.get('setor', '')}.")
         else:
-            groups.append({"sector": sector, "risks": selected_risks})
+            groups.append({"sector": sector, "risks": selected_risks, "exams": selected_exams})
 
     return groups, errors
 
@@ -368,6 +455,57 @@ def setores():
     return render_template("setores.html", sectors=_sorted_sectors())
 
 
+@app.route("/exames")
+def exames():
+    return render_template("exames.html", exams=_sorted_exams())
+
+
+@app.route("/exame/novo", methods=["GET", "POST"])
+def create_exam():
+    if request.method == "POST":
+        new_exam = _form_to_exam()
+        errors = _validate_exam(new_exam)
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("exame_form.html", exam=new_exam, title="Novo exame")
+        db.session.add(_exam_from_dict(new_exam))
+        db.session.commit()
+        flash("Exame cadastrado com sucesso.", "success")
+        return redirect(url_for("exames"))
+    return render_template("exame_form.html", exam={}, title="Novo exame")
+
+
+@app.route("/exame/<exam_id>/editar", methods=["GET", "POST"])
+def edit_exam(exam_id: str):
+    exam_model = db.session.get(Exam, exam_id)
+    if not exam_model:
+        flash("Exame não encontrado.", "error")
+        return redirect(url_for("exames"))
+    if request.method == "POST":
+        updated = _form_to_exam(existing_id=exam_id)
+        errors = _validate_exam(updated)
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("exame_form.html", exam={**exam_model.to_dict(), **updated}, title="Editar exame")
+        _exam_from_dict(updated, exam_model)
+        db.session.commit()
+        flash("Exame atualizado com sucesso.", "success")
+        return redirect(url_for("exames"))
+    return render_template("exame_form.html", exam=exam_model.to_dict(), title="Editar exame")
+
+
+@app.post("/exame/<exam_id>/excluir")
+def delete_exam(exam_id: str):
+    exam_model = db.session.get(Exam, exam_id)
+    if exam_model:
+        db.session.delete(exam_model)
+        db.session.commit()
+        flash("Exame excluído.", "success")
+    return redirect(url_for("exames"))
+
+
 @app.route("/gerar")
 def gerar():
     today = datetime.now().strftime("%m/%Y")
@@ -376,6 +514,7 @@ def gerar():
         "gerar.html",
         risks=_sorted_risks(),
         sectors=_sorted_sectors(),
+        exams=_sorted_exams(),
         options=FORM_OPTIONS,
         today=today,
         next_year=next_year,
@@ -572,18 +711,56 @@ def generate_risco_pgr():
         return redirect(url_for("gerar"))
 
 
-@app.post("/gerar-pcmso")
-def generate_pcmso():
+@app.post("/gerar-riscos-pcmso")
+def generate_riscos_pcmso():
     groups, errors = _selected_sector_risk_groups()
     if errors:
         for error in errors:
             flash(error, "error")
         return redirect(url_for("gerar"))
     try:
-        return _send_generated_docx(generate_pcmso_docx, groups, "pcmso", "PCMSO_RISCOS.docx")
+        return _send_generated_docx(generate_riscos_pcmso_docx, groups, "riscos_pcmso", "RISCOS_PCMSO.docx")
     except Exception as exc:
-        flash(f"Erro ao gerar PCMSO: {exc}", "error")
+        flash(f"Erro ao gerar riscos/exames do PCMSO: {exc}", "error")
         return redirect(url_for("gerar"))
+
+
+@app.post("/gerar-pcmso-completo")
+def generate_complete_pcmso():
+    groups, errors = _selected_sector_risk_groups()
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return redirect(url_for("gerar"))
+    try:
+        empresa = _field("empresa")
+        cnpj = _field("cnpj")
+        data_atual = _field("data_atual")
+        data_final = _field("data_final")
+        if not empresa:
+            flash("Preencha o nome da empresa para gerar o PCMSO completo.", "error")
+            return redirect(url_for("gerar"))
+        if not cnpj:
+            flash("Preencha o CNPJ da empresa para gerar o PCMSO completo.", "error")
+            return redirect(url_for("gerar"))
+        return _send_generated_docx(
+            generate_complete_pcmso_docx,
+            groups,
+            "pcmso_completo",
+            "PCMSO_COMPLETO.docx",
+            empresa,
+            cnpj,
+            data_atual,
+            data_final,
+        )
+    except Exception as exc:
+        flash(f"Erro ao gerar PCMSO completo: {exc}", "error")
+        return redirect(url_for("gerar"))
+
+
+@app.post("/gerar-pcmso")
+def generate_pcmso():
+    return generate_riscos_pcmso()
 
 
 @app.post("/gerar-relacao-funcao-atividade")
