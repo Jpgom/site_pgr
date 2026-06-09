@@ -7,3 +7,20 @@
 .hint, label small{display:block;color:var(--muted);font-size:12px;font-weight:500;margin-top:7px}
 @media(max-width:860px){.inline-import,.inline-import:has(select){grid-template-columns:1fr}}
 .info-panel{background:#f8fafc;border-style:dashed}.info-panel strong{display:block;margin-bottom:6px}.ltcat-auto-panel{border-color:#bfdbfe}
+
+/* V19 - seleção de riscos mais compacta e organizada */
+.risk-header-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.pill{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:999px;padding:7px 11px;font-size:12px;font-weight:850;white-space:nowrap;background:#fff;color:#334155}
+.count-pill{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.soft-pill{background:#f8fafc;color:#475569}
+.picker-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 11px;border-top:1px solid var(--line);background:#f8fafc}
+.risk-list-mode{display:block;max-height:360px;padding:8px;background:#fbfdff}
+.risk-list-mode .risk-list-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:9px;align-items:center;margin-bottom:6px;padding:8px 10px;border-radius:10px}
+.risk-list-mode .risk-list-row:last-child{margin-bottom:0}
+.risk-list-row span{font-weight:750;color:#334155;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-list-row em{padding:3px 8px;border-radius:999px;background:#f1f5f9;color:#64748b;font-size:11px;white-space:nowrap}
+.risk-list-row.is-selected{border-color:#93c5fd;background:#eff6ff;box-shadow:inset 3px 0 0 #2563eb}
+.risk-list-row.is-selected span{color:#1e3a8a}
+.risk-list-row.is-selected em{background:#dbeafe;color:#1d4ed8}
+.sector-risk-count{color:#2563eb;font-weight:850}
+@media(max-width:860px){.risk-header-tools{width:100%;justify-content:flex-start}.risk-header-tools .search{max-width:none}.risk-list-mode .risk-list-row{grid-template-columns:auto 1fr}.risk-list-row em{grid-column:2}.picker-topbar{align-items:flex-start;flex-direction:column}}

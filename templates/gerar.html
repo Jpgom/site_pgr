@@ -98,17 +98,30 @@
     <div class="step-number">4</div>
     <div class="step-content">
       <div class="split header-line">
-        <div><h2>Riscos por setor</h2><p class="muted">Use esta seleção para PGR e PCMSO. Na LTCAT, todos os riscos ambientais marcados aqui entram automaticamente.</p></div>
-        <input class="search" id="riskPickerSearch" placeholder="Buscar risco...">
+        <div>
+          <h2>Riscos por setor</h2>
+          <p class="muted">Use esta seleção para PGR e PCMSO. Na LTCAT, todos os riscos ambientais marcados aqui entram automaticamente.</p>
+        </div>
+        <div class="risk-header-tools">
+          <span class="pill count-pill" id="totalRiskSelected">0 riscos selecionados</span>
+          <input class="search" id="riskPickerSearch" placeholder="Buscar risco...">
+        </div>
       </div>
       {% if risks and sectors %}
         <div class="accordion-list">
           {% for sector in sectors %}
             <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}" {% if sector.id in selected_sector_ids %}open{% endif %}>
-              <summary><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }} · {{ sector.cargos|length }} cargo(s)</small></summary>
-              <div class="picker-list">
+              <summary>
+                <strong>{{ sector.setor }}</strong>
+                <small>{{ sector.grupo_nome }} · {{ sector.cargos|length }} cargo(s) · <span class="sector-risk-count" data-risk-count>0 riscos selecionados</span></small>
+              </summary>
+              <div class="picker-topbar">
+                <span class="muted small-note">Selecionados ficam sempre no topo da lista.</span>
+                <span class="pill soft-pill" data-risk-count-badge>0 selecionados</span>
+              </div>
+              <div class="picker-list risk-list-mode" data-risk-list="{{ sector.id }}">
                 {% for risk in risks %}
-                  <label class="tiny-check risk-option" data-search="{{ (risk.risco ~ ' ' ~ risk.tipo_risco ~ ' ' ~ risk.grau_nivel_risco)|lower }}">
+                  <label class="tiny-check risk-option risk-list-row {% if risk.id in selected_risk_ids_by_sector.get(sector.id, []) %}is-selected{% endif %}" data-index="{{ loop.index0 }}" data-search="{{ (risk.risco ~ ' ' ~ risk.tipo_risco ~ ' ' ~ risk.grau_nivel_risco)|lower }}">
                     <input class="pgr-risk-check" type="checkbox" name="sector_risk_ids_{{ sector.id }}" value="{{ risk.id }}" {% if risk.id in selected_risk_ids_by_sector.get(sector.id, []) %}checked{% endif %}>
                     <span>{{ risk.risco }}</span><em>{{ risk.tipo_risco }} · {{ risk.grau_nivel_risco }}</em>
                   </label>

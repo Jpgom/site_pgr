@@ -139,3 +139,54 @@ if (pgrForm) {
     }
   });
 }
+
+// Seleção compacta de riscos na geração dos laudos
+function riskLabelOriginalIndex(label) {
+  const raw = label.getAttribute('data-index') || '0';
+  const parsed = parseInt(raw, 10);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function updateRiskSelectionLists() {
+  let totalSelected = 0;
+  document.querySelectorAll('.risk-list-mode').forEach((list) => {
+    const labels = Array.from(list.querySelectorAll('.risk-list-row'));
+    let selectedCount = 0;
+
+    labels.forEach((label) => {
+      const input = label.querySelector('.pgr-risk-check');
+      const isChecked = !!(input && input.checked);
+      label.classList.toggle('is-selected', isChecked);
+      if (isChecked) selectedCount += 1;
+    });
+
+    totalSelected += selectedCount;
+
+    labels
+      .sort((a, b) => {
+        const aChecked = a.classList.contains('is-selected') ? 1 : 0;
+        const bChecked = b.classList.contains('is-selected') ? 1 : 0;
+        if (aChecked !== bChecked) return bChecked - aChecked;
+        return riskLabelOriginalIndex(a) - riskLabelOriginalIndex(b);
+      })
+      .forEach((label) => list.appendChild(label));
+
+    const picker = list.closest('.sector-picker');
+    if (picker) {
+      const countText = `${selectedCount} ${selectedCount === 1 ? 'risco selecionado' : 'riscos selecionados'}`;
+      picker.querySelectorAll('[data-risk-count], [data-risk-count-badge]').forEach((el) => {
+        el.textContent = countText;
+      });
+    }
+  });
+
+  const total = document.getElementById('totalRiskSelected');
+  if (total) {
+    total.textContent = `${totalSelected} ${totalSelected === 1 ? 'risco selecionado' : 'riscos selecionados'}`;
+  }
+}
+
+document.querySelectorAll('.pgr-risk-check').forEach((box) => {
+  box.addEventListener('change', updateRiskSelectionLists);
+});
+updateRiskSelectionLists();
