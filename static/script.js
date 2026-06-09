@@ -28,7 +28,6 @@ attachSearch('sectorGroupSearch', '#sectorGroupList .group-box');
 attachSearch('pgrSectorSearch', '#pgrSectorList .sector-option');
 attachSearch('riskPickerSearch', '.risk-option');
 attachSearch('examPickerSearch', '.exam-option');
-attachSearch('ltcatRiskPickerSearch', '.ltcat-risk-option');
 
 function selectedPgrSectorIds() {
   return new Set(Array.from(document.querySelectorAll('input[name="pgr_sector_ids"]:checked')).map((box) => box.value));
@@ -92,10 +91,6 @@ function togglePgrRisks(checked) {
 function togglePgrExams(checked) {
   document.querySelectorAll('.pgr-exam-check').forEach((box) => { box.checked = checked; });
 }
-function toggleLtcatRisks(checked) {
-  document.querySelectorAll('.ltcat-risk-check').forEach((box) => { box.checked = checked; });
-}
-
 function syncRevisionField() {
   const ajuste = document.getElementById('ajustePsicossocial');
   const field = document.getElementById('revisionField');

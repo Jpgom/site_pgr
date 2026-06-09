@@ -6,7 +6,6 @@
 {% set selected_sector_ids = fs.get('selected_sector_ids', []) %}
 {% set selected_risk_ids_by_sector = fs.get('selected_risk_ids_by_sector', {}) %}
 {% set selected_exam_ids_by_sector = fs.get('selected_exam_ids_by_sector', {}) %}
-{% set selected_ltcat_risk_ids_by_sector = fs.get('selected_ltcat_risk_ids_by_sector', {}) %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Geração</p>
@@ -99,7 +98,7 @@
     <div class="step-number">4</div>
     <div class="step-content">
       <div class="split header-line">
-        <div><h2>Riscos por setor</h2><p class="muted">Use esta seleção para PGR e PCMSO. A LTCAT tem uma seleção própria no próximo bloco.</p></div>
+        <div><h2>Riscos por setor</h2><p class="muted">Use esta seleção para PGR e PCMSO. Na LTCAT, todos os riscos ambientais marcados aqui entram automaticamente.</p></div>
         <input class="search" id="riskPickerSearch" placeholder="Buscar risco...">
       </div>
       {% if risks and sectors %}
@@ -153,38 +152,10 @@
     </div>
   </section>
 
-  <section class="panel step-panel ltcat-step-panel">
-    <div class="step-number">6</div>
-    <div class="step-content">
-      <div class="split header-line">
-        <div>
-          <h2>Riscos da LTCAT por setor</h2>
-          <p class="muted">Selecione aqui somente os riscos que devem entrar na LTCAT. Se um setor ficar sem riscos marcados, será gerado como AUSÊNCIA DE RISCOS.</p>
-        </div>
-        <input class="search" id="ltcatRiskPickerSearch" placeholder="Buscar risco ambiental...">
-      </div>
-      {% if ltcat_risks and sectors %}
-        <div class="accordion-list ltcat-risk-accordion">
-          {% for sector in sectors %}
-            <details class="sector-picker ltcat-sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}" {% if sector.id in selected_sector_ids %}open{% endif %}>
-              <summary>
-                <strong>{{ sector.setor }}</strong>
-                <small>{{ sector.grupo_nome }} · selecione os riscos da LTCAT</small>
-              </summary>
-              <div class="picker-list">
-                {% for risk in ltcat_risks %}
-                  <label class="tiny-check ltcat-risk-option" data-search="{{ (risk.risco ~ ' ' ~ risk.tipo_risco ~ ' ' ~ risk.ltcat_enquadramento_tecnico)|lower }}">
-                    <input class="ltcat-risk-check" type="checkbox" name="ltcat_risk_ids_{{ sector.id }}" value="{{ risk.id }}" {% if risk.id in selected_ltcat_risk_ids_by_sector.get(sector.id, []) %}checked{% endif %}>
-                    <span>{{ risk.risco }}</span><em>{{ risk.tipo_risco }}</em>
-                  </label>
-                {% endfor %}
-              </div>
-            </details>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="empty left"><strong>Nenhum risco ambiental cadastrado.</strong><p>Cadastre riscos do tipo FÍSICO, QUÍMICO ou BIOLÓGICO para selecionar na LTCAT.</p></div>
-      {% endif %}
+  <section class="panel info-panel ltcat-auto-panel">
+    <div>
+      <strong>LTCAT automática</strong>
+      <p class="muted">Ao gerar a LTCAT, todos os riscos ambientais selecionados em cada setor entram automaticamente: FÍSICO, QUÍMICO e BIOLÓGICO. Se o setor não tiver risco ambiental marcado, será gerado como AUSÊNCIA DE RISCOS.</p>
     </div>
   </section>
 

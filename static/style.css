@@ -6,3 +6,4 @@
 .inline-import:has(select){grid-template-columns:minmax(220px,.55fr) minmax(220px,.7fr) auto}
 .hint, label small{display:block;color:var(--muted);font-size:12px;font-weight:500;margin-top:7px}
 @media(max-width:860px){.inline-import,.inline-import:has(select){grid-template-columns:1fr}}
+.info-panel{background:#f8fafc;border-style:dashed}.info-panel strong{display:block;margin-bottom:6px}.ltcat-auto-panel{border-color:#bfdbfe}
