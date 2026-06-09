@@ -730,6 +730,55 @@ def _compact_first_page_date_block(doc: Document) -> None:
         paragraph.paragraph_format.line_spacing = 1
 
 
+def _clone_paragraph_style(new_p, source_p) -> None:
+    p_pr = source_p.find(qn("w:pPr"))
+    if p_pr is not None:
+        new_p.insert(0, deepcopy(p_pr))
+
+
+def _make_revision_paragraph(text: str, source_paragraph) -> OxmlElement:
+    p = OxmlElement("w:p")
+    _clone_paragraph_style(p, source_paragraph._p)
+    r = OxmlElement("w:r")
+    r_pr = None
+    first_run = source_paragraph._p.find(qn("w:r"))
+    if first_run is not None:
+        maybe_rpr = first_run.find(qn("w:rPr"))
+        if maybe_rpr is not None:
+            r_pr = deepcopy(maybe_rpr)
+    if r_pr is not None:
+        r.append(r_pr)
+    for node in _make_text(text):
+        r.append(node)
+    p.append(r)
+    return p
+
+
+def _insert_psychosocial_revision_line(doc: Document, company: Mapping[str, str]) -> None:
+    """Insere a linha de revisão de inclusão de risco psicossocial entre Data do documento e Revisão periódica."""
+    if company.get("ajuste_psicossocial") != "1":
+        return
+    data_revisao = (company.get("data_da_revisao") or "").strip()
+    if not data_revisao:
+        return
+    text = f"Revisão periódica de inclusão de Risco Psicossocial: {data_revisao}"
+    for paragraph in doc.paragraphs:
+        p_text = (paragraph.text or "").strip()
+        if p_text.startswith("Data do documento:"):
+            # Evita duplicar a linha caso o documento seja processado novamente.
+            next_el = paragraph._p.getnext()
+            while next_el is not None and next_el.tag == qn("w:p"):
+                next_text = "".join(t.text or "" for t in next_el.iter(qn("w:t"))).strip()
+                if next_text:
+                    if next_text.startswith("Revisão periódica de inclusão de Risco Psicossocial"):
+                        return
+                    break
+                next_el = next_el.getnext()
+            new_p = _make_revision_paragraph(text, paragraph)
+            paragraph._p.addnext(new_p)
+            return
+
+
 def _compact_known_static_spacers(doc: Document) -> None:
     """Suaviza espaçamentos exagerados de páginas estáticas do modelo, sem alterar tabelas."""
     compact_starts = (
@@ -826,6 +875,7 @@ def _company_dict_for_docs(empresa: str, cnpj: str, data_atual: str, data_final:
             if value not in (None, ""):
                 return str(value).strip()
         return ""
+    data_criacao = pick("data_criacao_laudo", "datacriacaolaudo", "data_avaliacao")
     return {
         "empresa": str(empresa or pick("empresa", "nome")).strip(),
         "cnpj": str(cnpj or pick("cnpj")).strip(),
@@ -843,7 +893,10 @@ def _company_dict_for_docs(empresa: str, cnpj: str, data_atual: str, data_final:
         "funcionarios": pick("funcionarios"),
         "email": pick("email"),
         "fone": pick("fone"),
-        "data_avaliacao": pick("data_avaliacao") or str(data_atual or "").strip(),
+        "data_avaliacao": data_criacao or str(data_atual or "").strip(),
+        "data_criacao_laudo": data_criacao,
+        "ajuste_psicossocial": pick("ajuste_psicossocial"),
+        "data_da_revisao": pick("data_da_revisao", "data_revisao_ajuste"),
     }
 
 
@@ -879,7 +932,10 @@ def _company_replacements(company: Mapping[str, str]) -> dict[str, str]:
         "{{N°FUNCIONARIOS}}": funcionarios,
         "{{EMAIL}}": company.get("email", ""),
         "{{FONE}}": company.get("fone", ""),
-        "{{datacriacaolaudo}}": company.get("data_avaliacao") or company.get("data_atual", ""),
+        "{{DATACRIACAOLAUDO}}": company.get("data_criacao_laudo") or company.get("data_avaliacao") or company.get("data_atual", ""),
+        "{{datacriacaolaudo}}": company.get("data_criacao_laudo") or company.get("data_avaliacao") or company.get("data_atual", ""),
+        "{{DATADAREVISAO}}": company.get("data_da_revisao", ""),
+        "{{datadarevisao}}": company.get("data_da_revisao", ""),
     }
 
 
@@ -967,6 +1023,7 @@ def generate_complete_pgr_docx(
     _replace_xml_element_with(plano_table.getparent(), plano_table, _build_action_plan_elements(plano_table, groups, data_atual=data_atual, data_final=data_final))
 
     _fill_company_identification_tables(doc, company, sectors)
+    _insert_psychosocial_revision_line(doc, company)
     _replace_doc_placeholders(doc, _company_replacements(company))
 
     # Ajustes de layout solicitados:
@@ -1176,6 +1233,7 @@ def generate_complete_pcmso_docx(
     _replace_pcmso_riscos_area(doc, groups)
 
     _fill_company_identification_tables(doc, company, sectors)
+    _insert_psychosocial_revision_line(doc, company)
     _replace_doc_placeholders(doc, _company_replacements(company))
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1286,6 +1344,7 @@ def _ltcat_sector_cargos_text(sector: Mapping[str, Any]) -> str:
 
 def _ltcat_company_dict(empresa: str, cnpj: str, data_atual: str, data_final: str, extra: Mapping[str, Any] | None = None) -> dict[str, str]:
     extra = extra or {}
+    data_criacao = str(extra.get("data_criacao_laudo") or extra.get("datacriacaolaudo") or extra.get("data_avaliacao") or "").strip()
     return {
         "empresa": str(empresa or "").strip(),
         "cnpj": str(cnpj or "").strip(),
@@ -1303,7 +1362,10 @@ def _ltcat_company_dict(empresa: str, cnpj: str, data_atual: str, data_final: st
         "funcionarios": str(extra.get("funcionarios", "") or "").strip(),
         "email": str(extra.get("email", "") or "").strip(),
         "fone": str(extra.get("fone", "") or "").strip(),
-        "data_avaliacao": str(extra.get("data_avaliacao", "") or data_atual or "").strip(),
+        "data_avaliacao": data_criacao or str(data_atual or "").strip(),
+        "data_criacao_laudo": data_criacao,
+        "ajuste_psicossocial": str(extra.get("ajuste_psicossocial", "") or "").strip(),
+        "data_da_revisao": str(extra.get("data_da_revisao", extra.get("data_revisao_ajuste", "")) or "").strip(),
     }
 
 
@@ -1501,7 +1563,8 @@ def _ltcat_fill_signature(doc: Document, company: Mapping[str, str]) -> None:
         if _ltcat_table_has_text(table, "RESPONSÁVEL LEGAL DA EMPRESA") and _ltcat_table_has_text(table, "{{empresa}}"):
             _ltcat_replace_in_table(table, {
                 "{{empresa}}": company.get("empresa", ""),
-                "{{datacriacaolaudo}}": company.get("data_avaliacao") or company.get("data_atual", ""),
+                "{{DATACRIACAOLAUDO}}": company.get("data_criacao_laudo") or company.get("data_avaliacao") or company.get("data_atual", ""),
+                "{{datacriacaolaudo}}": company.get("data_criacao_laudo") or company.get("data_avaliacao") or company.get("data_atual", ""),
             })
 
 
@@ -1544,6 +1607,7 @@ def generate_complete_ltcat_docx(
     sectors = [group["sector"] for group in groups]
     data_avaliacao = company.get("data_avaliacao") or data_atual
 
+    _insert_psychosocial_revision_line(doc, company)
     _replace_doc_placeholders(doc, _company_replacements(company))
     _ltcat_fill_company_table(doc, company, sectors)
     _ltcat_fill_relacao_funcoes(doc, sectors, data_atual, data_final)

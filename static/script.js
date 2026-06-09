@@ -69,3 +69,52 @@ function togglePgrRisks(checked) {
 function togglePgrExams(checked) {
   document.querySelectorAll('.pgr-exam-check').forEach((box) => { box.checked = checked; });
 }
+
+function syncRevisionField() {
+  const ajuste = document.getElementById('ajustePsicossocial');
+  const field = document.getElementById('revisionField');
+  const input = document.getElementById('dataDaRevisao');
+  if (!ajuste || !field || !input) return;
+  const active = ajuste.checked;
+  field.style.display = active ? '' : 'none';
+  input.required = active;
+  if (!active) input.value = '';
+}
+const ajusteBox = document.getElementById('ajustePsicossocial');
+if (ajusteBox) {
+  ajusteBox.addEventListener('change', syncRevisionField);
+  syncRevisionField();
+}
+
+const pgrForm = document.getElementById('pgrSelectionForm');
+if (pgrForm) {
+  pgrForm.addEventListener('submit', (event) => {
+    const submitter = event.submitter;
+    const action = submitter ? (submitter.getAttribute('formaction') || '') : '';
+    const isComplete = action.includes('gerar-pgr-completo') || action.includes('gerar-pcmso-completo') || action.includes('gerar-ltcat-completo');
+    if (!isComplete) return;
+
+    const company = document.getElementById('companySelect');
+    const dataCriacao = document.getElementById('dataCriacaoLaudo');
+    const dataRevisao = document.getElementById('dataDaRevisao');
+    const ajuste = document.getElementById('ajustePsicossocial');
+    if (company && !company.value) {
+      event.preventDefault();
+      company.focus();
+      alert('Selecione uma empresa antes de gerar o laudo. Suas marcações foram mantidas.');
+      return;
+    }
+    if (dataCriacao && !dataCriacao.value.trim()) {
+      event.preventDefault();
+      dataCriacao.focus();
+      alert('Preencha a Data de criação do laudo antes de gerar. Suas marcações foram mantidas.');
+      return;
+    }
+    if (ajuste && ajuste.checked && dataRevisao && !dataRevisao.value.trim()) {
+      event.preventDefault();
+      dataRevisao.focus();
+      alert('Preencha a Data da revisão psicossocial antes de gerar. Suas marcações foram mantidas.');
+      return;
+    }
+  });
+}

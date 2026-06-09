@@ -625,6 +625,18 @@ def _grouped_sectors() -> list[dict[str, Any]]:
     return sorted(grouped.values(), key=lambda item: (item["nome"] == "Sem grupo", item["nome"].lower()))
 
 
+def _generation_form_extras() -> dict[str, str]:
+    """Dados específicos da finalização do laudo, preenchidos na tela Gerar laudos."""
+    ajuste = request.form.get("ajuste_psicossocial") == "1"
+    return {
+        "data_criacao_laudo": _field("data_criacao_laudo"),
+        "datacriacaolaudo": _field("data_criacao_laudo"),
+        "ajuste_psicossocial": "1" if ajuste else "",
+        "data_da_revisao": _field("data_da_revisao") if ajuste else "",
+        "data_revisao_ajuste": _field("data_da_revisao") if ajuste else "",
+    }
+
+
 def _company_payload_from_form() -> dict[str, str]:
     company_id = _field("company_id")
     if company_id:
@@ -634,6 +646,7 @@ def _company_payload_from_form() -> dict[str, str]:
             # Permite sobrescrever a vigência se um campo de formulário existir no futuro.
             data["data_atual"] = _field("data_atual") or data.get("data_atual", "")
             data["data_final"] = _field("data_final") or data.get("data_final", "")
+            data.update(_generation_form_extras())
             return data
     data = _form_to_company()
     data["empresa"] = data.get("nome", "")
@@ -643,6 +656,7 @@ def _company_payload_from_form() -> dict[str, str]:
     data["cnae_secundario"] = data.get("cnae2", "")
     data["descricao_atividade_secundaria"] = data.get("descricao2", "")
     data["grau_risco_secundario"] = data.get("grau2", "")
+    data.update(_generation_form_extras())
     return data
 
 def _selected_risks() -> list[dict[str, Any]]:
@@ -841,22 +855,59 @@ def delete_exam(exam_id: str):
     return redirect(url_for("exames"))
 
 
-@app.route("/gerar")
-def gerar():
+def _gerar_form_state_from_request() -> dict[str, Any]:
+    sector_ids = request.form.getlist("pgr_sector_ids")
+    risks_by_sector = {sector_id: request.form.getlist(f"sector_risk_ids_{sector_id}") for sector_id in sector_ids}
+    exams_by_sector = {sector_id: request.form.getlist(f"sector_exam_ids_{sector_id}") for sector_id in sector_ids}
+    return {
+        "company_id": _field("company_id"),
+        "data_criacao_laudo": _field("data_criacao_laudo"),
+        "ajuste_psicossocial": "1" if request.form.get("ajuste_psicossocial") == "1" else "",
+        "data_da_revisao": _field("data_da_revisao"),
+        "selected_sector_ids": sector_ids,
+        "selected_risk_ids_by_sector": risks_by_sector,
+        "selected_exam_ids_by_sector": exams_by_sector,
+    }
+
+
+def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     today = datetime.now().strftime("%m/%Y")
     next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")
-    return render_template(
-        "gerar.html",
-        risks=_sorted_risks(),
-        sectors=_sorted_sectors(),
-        exams=_sorted_exams(),
-        groups=_sorted_groups(),
-        grouped_sectors=_grouped_sectors(),
-        companies=_sorted_companies(),
-        options=FORM_OPTIONS,
-        today=today,
-        next_year=next_year,
-    )
+    return {
+        "risks": _sorted_risks(),
+        "sectors": _sorted_sectors(),
+        "exams": _sorted_exams(),
+        "groups": _sorted_groups(),
+        "grouped_sectors": _grouped_sectors(),
+        "companies": _sorted_companies(),
+        "options": FORM_OPTIONS,
+        "today": today,
+        "next_year": next_year,
+        "form_state": form_state or {},
+    }
+
+
+def _render_gerar_with_current_form():
+    return render_template("gerar.html", **_gerar_context(_gerar_form_state_from_request()))
+
+
+def _validate_complete_report_fields(company: dict[str, str], label: str) -> list[str]:
+    errors: list[str] = []
+    empresa = company.get("empresa") or company.get("nome", "")
+    if not empresa:
+        errors.append(f"Selecione ou cadastre uma empresa para gerar o {label} completo.")
+    if not company.get("cnpj"):
+        errors.append(f"Cadastre o CNPJ da empresa para gerar o {label} completo.")
+    if not company.get("data_criacao_laudo"):
+        errors.append("Preencha a Data de criação do laudo para finalizar o documento.")
+    if company.get("ajuste_psicossocial") == "1" and not company.get("data_da_revisao"):
+        errors.append("Preencha a Data da revisão psicossocial quando marcar que o laudo é apenas um ajuste.")
+    return errors
+
+
+@app.route("/gerar")
+def gerar():
+    return render_template("gerar.html", **_gerar_context())
 
 
 @app.post("/risco/novo")
@@ -990,7 +1041,7 @@ def _company_extra_from_form() -> dict[str, str]:
 def _send_generated_docx(generator, selected: list[dict[str, Any]], stem: str, download_name: str, *args):
     if not selected:
         flash("Selecione pelo menos um item para gerar o arquivo Word.", "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1007,22 +1058,17 @@ def _send_generated_docx(generator, selected: list[dict[str, Any]], stem: str, d
 @app.post("/gerar-pgr-completo")
 def generate_complete_pgr():
     groups, errors = _selected_sector_risk_groups()
+    company = _company_payload_from_form()
+    errors.extend(_validate_complete_report_fields(company, "PGR"))
     if errors:
         for error in errors:
             flash(error, "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
     try:
-        company = _company_payload_from_form()
         empresa = company.get("empresa") or company.get("nome", "")
         cnpj = company.get("cnpj", "")
         data_atual = company.get("data_atual", "")
         data_final = company.get("data_final", "")
-        if not empresa:
-            flash("Selecione ou cadastre uma empresa para gerar o PGR completo.", "error")
-            return redirect(url_for("gerar"))
-        if not cnpj:
-            flash("Cadastre o CNPJ da empresa para gerar o PGR completo.", "error")
-            return redirect(url_for("gerar"))
         return _send_generated_docx(
             generate_complete_pgr_docx,
             groups,
@@ -1036,7 +1082,7 @@ def generate_complete_pgr():
         )
     except Exception as exc:
         flash(f"Erro ao gerar PGR completo: {exc}", "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
 
 
 @app.post("/gerar-plano-acao")
@@ -1095,22 +1141,17 @@ def generate_riscos_pcmso():
 @app.post("/gerar-ltcat-completo")
 def generate_complete_ltcat():
     groups, errors = _selected_sector_ltcat_groups()
+    company = _company_payload_from_form()
+    errors.extend(_validate_complete_report_fields(company, "LTCAT"))
     if errors:
         for error in errors:
             flash(error, "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
     try:
-        company = _company_payload_from_form()
         empresa = company.get("empresa") or company.get("nome", "")
         cnpj = company.get("cnpj", "")
         data_atual = company.get("data_atual", "")
         data_final = company.get("data_final", "")
-        if not empresa:
-            flash("Selecione ou cadastre uma empresa para gerar o LTCAT completo.", "error")
-            return redirect(url_for("gerar"))
-        if not cnpj:
-            flash("Cadastre o CNPJ da empresa para gerar o LTCAT completo.", "error")
-            return redirect(url_for("gerar"))
         return _send_generated_docx(
             generate_complete_ltcat_docx,
             groups,
@@ -1124,28 +1165,23 @@ def generate_complete_ltcat():
         )
     except Exception as exc:
         flash(f"Erro ao gerar LTCAT completo: {exc}", "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
 
 
 @app.post("/gerar-pcmso-completo")
 def generate_complete_pcmso():
     groups, errors = _selected_sector_risk_groups()
+    company = _company_payload_from_form()
+    errors.extend(_validate_complete_report_fields(company, "PCMSO"))
     if errors:
         for error in errors:
             flash(error, "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
     try:
-        company = _company_payload_from_form()
         empresa = company.get("empresa") or company.get("nome", "")
         cnpj = company.get("cnpj", "")
         data_atual = company.get("data_atual", "")
         data_final = company.get("data_final", "")
-        if not empresa:
-            flash("Selecione ou cadastre uma empresa para gerar o PCMSO completo.", "error")
-            return redirect(url_for("gerar"))
-        if not cnpj:
-            flash("Cadastre o CNPJ da empresa para gerar o PCMSO completo.", "error")
-            return redirect(url_for("gerar"))
         return _send_generated_docx(
             generate_complete_pcmso_docx,
             groups,
@@ -1159,7 +1195,7 @@ def generate_complete_pcmso():
         )
     except Exception as exc:
         flash(f"Erro ao gerar PCMSO completo: {exc}", "error")
-        return redirect(url_for("gerar"))
+        return _render_gerar_with_current_form()
 
 
 @app.post("/gerar-pcmso")

@@ -2,6 +2,10 @@
 {% block title %}Gerar Laudos{% endblock %}
 
 {% block content %}
+{% set fs = form_state or {} %}
+{% set selected_sector_ids = fs.get('selected_sector_ids', []) %}
+{% set selected_risk_ids_by_sector = fs.get('selected_risk_ids_by_sector', {}) %}
+{% set selected_exam_ids_by_sector = fs.get('selected_exam_ids_by_sector', {}) %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Geração</p>
@@ -22,7 +26,7 @@
           <select name="company_id" id="companySelect" required>
             <option value="">Selecione...</option>
             {% for company in companies %}
-              <option value="{{ company.id }}">{{ company.nome }} · {{ company.cnpj }}</option>
+              <option value="{{ company.id }}" {% if fs.get('company_id') == company.id %}selected{% endif %}>{{ company.nome }} · {{ company.cnpj }}</option>
             {% endfor %}
           </select>
         </label>
@@ -34,6 +38,29 @@
 
   <section class="panel step-panel">
     <div class="step-number">2</div>
+    <div class="step-content">
+      <h2>Dados do laudo</h2>
+      <p class="muted">A Data de criação do laudo é obrigatória para finalizar PGR, PCMSO e LTCAT.</p>
+      <div class="inline-grid">
+        <label>
+          <span>Data de criação do laudo</span>
+          <input name="data_criacao_laudo" id="dataCriacaoLaudo" required value="{{ fs.get('data_criacao_laudo', '') }}" placeholder="Ex.: 05/06/2026">
+        </label>
+        <label class="check-card">
+          <input type="checkbox" name="ajuste_psicossocial" id="ajustePsicossocial" value="1" {% if fs.get('ajuste_psicossocial') == '1' %}checked{% endif %}>
+          <span>Apenas ajuste / inclusão de Risco Psicossocial</span>
+        </label>
+      </div>
+      <label class="single-line revision-field" id="revisionField">
+        <span>Data da revisão psicossocial</span>
+        <input name="data_da_revisao" id="dataDaRevisao" value="{{ fs.get('data_da_revisao', '') }}" placeholder="Ex.: 06/2026">
+      </label>
+      <p class="muted small-note">Quando marcada a opção de ajuste, será inserida na capa a linha: “Revisão periódica de inclusão de Risco Psicossocial: data informada”.</p>
+    </div>
+  </section>
+
+  <section class="panel step-panel">
+    <div class="step-number">3</div>
     <div class="step-content">
       <h2>Grupo e setores</h2>
       <p class="muted">Escolha o grupo para filtrar e marque os setores que farão parte do laudo.</p>
@@ -56,7 +83,7 @@
         <div class="sector-select-list" id="pgrSectorList">
           {% for sector in sectors %}
             <label class="list-check sector-option" data-group="{{ sector.grupo_id or '__sem_grupo__' }}" data-search="{{ (sector.grupo_nome ~ ' ' ~ sector.setor ~ ' ' ~ sector.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ sector.cargos|map(attribute='cbo')|join(' '))|lower }}">
-              <input type="checkbox" name="pgr_sector_ids" value="{{ sector.id }}">
+              <input type="checkbox" name="pgr_sector_ids" value="{{ sector.id }}" {% if sector.id in selected_sector_ids %}checked{% endif %}>
               <span><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }} · {{ sector.cargos|map(attribute='cargo')|join(', ') }}</small></span>
             </label>
           {% endfor %}
@@ -68,7 +95,7 @@
   </section>
 
   <section class="panel step-panel">
-    <div class="step-number">3</div>
+    <div class="step-number">4</div>
     <div class="step-content">
       <div class="split header-line">
         <div><h2>Riscos por setor</h2><p class="muted">Listas compactas. Na LTCAT só serão impressos FÍSICO, QUÍMICO e BIOLÓGICO.</p></div>
@@ -77,12 +104,12 @@
       {% if risks and sectors %}
         <div class="accordion-list">
           {% for sector in sectors %}
-            <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}">
+            <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}" {% if sector.id in selected_sector_ids %}open{% endif %}>
               <summary><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }} · {{ sector.cargos|length }} cargo(s)</small></summary>
               <div class="picker-list">
                 {% for risk in risks %}
                   <label class="tiny-check risk-option" data-search="{{ (risk.risco ~ ' ' ~ risk.tipo_risco ~ ' ' ~ risk.grau_nivel_risco)|lower }}">
-                    <input class="pgr-risk-check" type="checkbox" name="sector_risk_ids_{{ sector.id }}" value="{{ risk.id }}">
+                    <input class="pgr-risk-check" type="checkbox" name="sector_risk_ids_{{ sector.id }}" value="{{ risk.id }}" {% if risk.id in selected_risk_ids_by_sector.get(sector.id, []) %}checked{% endif %}>
                     <span>{{ risk.risco }}</span><em>{{ risk.tipo_risco }} · {{ risk.grau_nivel_risco }}</em>
                   </label>
                 {% endfor %}
@@ -97,7 +124,7 @@
   </section>
 
   <section class="panel step-panel">
-    <div class="step-number">4</div>
+    <div class="step-number">5</div>
     <div class="step-content">
       <div class="split header-line">
         <div><h2>Exames por setor</h2><p class="muted">Usado no PCMSO. Marque os exames recomendados para cada setor.</p></div>
@@ -106,12 +133,12 @@
       {% if sectors %}
         <div class="accordion-list">
           {% for sector in sectors %}
-            <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}">
+            <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}" {% if sector.id in selected_sector_ids %}open{% endif %}>
               <summary><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }}</small></summary>
               <div class="picker-list">
                 {% for exam in exams %}
                   <label class="tiny-check exam-option" data-search="{{ (exam.exame ~ ' ' ~ exam.periodicidade)|lower }}">
-                    <input class="pgr-exam-check" type="checkbox" name="sector_exam_ids_{{ sector.id }}" value="{{ exam.id }}">
+                    <input class="pgr-exam-check" type="checkbox" name="sector_exam_ids_{{ sector.id }}" value="{{ exam.id }}" {% if exam.id in selected_exam_ids_by_sector.get(sector.id, []) %}checked{% endif %}>
                     <span>{{ exam.exame }}</span><em>{{ exam.periodicidade }}</em>
                   </label>
                 {% else %}
