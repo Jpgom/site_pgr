@@ -24,3 +24,22 @@
 .risk-list-row.is-selected em{background:#dbeafe;color:#1d4ed8}
 .sector-risk-count{color:#2563eb;font-weight:850}
 @media(max-width:860px){.risk-header-tools{width:100%;justify-content:flex-start}.risk-header-tools .search{max-width:none}.risk-list-mode .risk-list-row{grid-template-columns:auto 1fr}.risk-list-row em{grid-column:2}.picker-topbar{align-items:flex-start;flex-direction:column}}
+
+/* V20 - modal de cadastro rápido dentro da geração */
+body.modal-open{overflow:hidden}
+.modal-backdrop{position:fixed;inset:0;z-index:100;background:rgba(15,23,42,.48);display:none;align-items:center;justify-content:center;padding:22px}
+.modal-backdrop.is-open{display:flex}
+.modal-card{width:min(980px,100%);max-height:92vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:0 24px 80px rgba(15,23,42,.28);padding:22px}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px;border-bottom:1px solid var(--line);padding-bottom:14px}
+.modal-head h2{margin:4px 0 4px;font-size:22px}
+.quick-risk-form{display:grid;gap:10px}
+.quick-risk-errors{display:none;background:#fff1f2;color:#be123c;border:1px solid #fecdd3;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700}
+.quick-risk-errors div+div{margin-top:5px}
+.mini-section{border:1px solid var(--line);border-radius:14px;background:#fbfdff;overflow:hidden}
+.mini-section summary{cursor:pointer;padding:12px 14px;font-weight:900;background:#f8fafc}
+.mini-section[open] summary{border-bottom:1px solid var(--line)}
+.modal-grid{padding:14px}
+.modal-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:14px;margin-top:4px}
+.quick-auto-select{margin-right:auto;display:flex;align-items:center;gap:8px;font-weight:750;color:#334155}
+.quick-auto-select input{width:auto}.quick-auto-select span{margin:0;font-size:13px;color:#334155}
+@media(max-width:860px){.modal-backdrop{padding:10px;align-items:flex-start}.modal-card{max-height:96vh;padding:16px;border-radius:18px}.modal-head{flex-direction:column}.modal-actions{align-items:stretch;flex-direction:column}.quick-auto-select{margin-right:0}}

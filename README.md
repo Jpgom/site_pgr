@@ -54,3 +54,9 @@ git push
 ```
 
 O banco existente é preservado. As novas tabelas/colunas são criadas automaticamente ao iniciar o sistema.
+
+## Atualização V20
+
+- Cadastro rápido de risco dentro da tela **Gerar laudos**, sem recarregar a página.
+- O novo risco é salvo via rota `/api/risco/novo` e aparece imediatamente nas listas de riscos por setor.
+- Opção para marcar automaticamente o novo risco nos setores já selecionados.

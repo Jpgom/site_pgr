@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, flash, redirect, render_template, request, send_file, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Text, inspect, text
 
@@ -1200,6 +1200,26 @@ def _validate_complete_report_fields(company: dict[str, str], label: str) -> lis
 @app.route("/gerar")
 def gerar():
     return render_template("gerar.html", **_gerar_context())
+
+
+@app.post("/api/risco/novo")
+def api_create_risk():
+    """Cadastro rápido usado na tela Gerar laudos, sem recarregar a página."""
+    new_risk = _form_to_risk()
+    errors = _validate_risk(new_risk)
+
+    if new_risk.get("risco"):
+        existing = Risk.query.filter(db.func.lower(Risk.risco) == new_risk["risco"].strip().lower()).first()
+        if existing:
+            errors.append("Já existe um risco cadastrado com esse nome.")
+
+    if errors:
+        return jsonify({"ok": False, "errors": errors}), 400
+
+    risk_model = _risk_from_dict(new_risk)
+    db.session.add(risk_model)
+    db.session.commit()
+    return jsonify({"ok": True, "message": "Risco cadastrado com sucesso.", "risk": risk_model.to_dict()})
 
 
 @app.post("/risco/novo")

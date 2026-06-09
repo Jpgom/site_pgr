@@ -190,3 +190,164 @@ document.querySelectorAll('.pgr-risk-check').forEach((box) => {
   box.addEventListener('change', updateRiskSelectionLists);
 });
 updateRiskSelectionLists();
+
+// V20 - cadastro rápido de risco dentro da tela Gerar laudos, sem recarregar a página
+function openModalElement(modal) {
+  if (!modal) return;
+  modal.classList.add('is-open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  const firstInput = modal.querySelector('input[name="risco"]');
+  if (firstInput) setTimeout(() => firstInput.focus(), 50);
+}
+
+function closeModalElement(modal) {
+  if (!modal) return;
+  modal.classList.remove('is-open');
+  modal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+}
+
+function showQuickRiskErrors(errors) {
+  const box = document.getElementById('quickRiskErrors');
+  if (!box) return;
+  const list = Array.isArray(errors) ? errors : [String(errors || 'Erro ao salvar o risco.')];
+  box.innerHTML = list.map((error) => `<div>${error}</div>`).join('');
+  box.style.display = list.length ? '' : 'none';
+}
+
+function clearQuickRiskErrors() {
+  const box = document.getElementById('quickRiskErrors');
+  if (!box) return;
+  box.innerHTML = '';
+  box.style.display = 'none';
+}
+
+function createRiskOptionLabel(risk, sectorId, checked) {
+  const label = document.createElement('label');
+  label.className = `tiny-check risk-option risk-list-row${checked ? ' is-selected' : ''}`;
+  label.setAttribute('data-index', '-1');
+  label.dataset.search = `${risk.risco || ''} ${risk.tipo_risco || ''} ${risk.grau_nivel_risco || ''}`.toLowerCase();
+  label.dataset.dynamicRiskId = risk.id;
+
+  const input = document.createElement('input');
+  input.className = 'pgr-risk-check';
+  input.type = 'checkbox';
+  input.name = `sector_risk_ids_${sectorId}`;
+  input.value = risk.id;
+  input.checked = !!checked;
+
+  const title = document.createElement('span');
+  title.textContent = risk.risco || '';
+
+  const meta = document.createElement('em');
+  meta.textContent = `${risk.tipo_risco || ''} · ${risk.grau_nivel_risco || ''}`;
+
+  label.appendChild(input);
+  label.appendChild(title);
+  label.appendChild(meta);
+  return label;
+}
+
+function addRiskToGenerationLists(risk, autoSelect) {
+  const selectedSectors = selectedPgrSectorIds();
+  const searchInput = document.getElementById('riskPickerSearch');
+  const term = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+  document.querySelectorAll('.risk-list-mode').forEach((list) => {
+    const sectorId = list.dataset.riskList;
+    if (!sectorId) return;
+    if (list.querySelector(`input.pgr-risk-check[value="${CSS.escape(risk.id)}"]`)) return;
+    const checked = !!autoSelect && selectedSectors.has(sectorId);
+    const label = createRiskOptionLabel(risk, sectorId, checked);
+    if (term && !label.dataset.search.includes(term)) label.style.display = 'none';
+    list.prepend(label);
+  });
+
+  updateRiskSelectionLists();
+}
+
+const quickRiskModal = document.getElementById('quickRiskModal');
+const openQuickRiskModalBtn = document.getElementById('openQuickRiskModal');
+const closeQuickRiskModalBtn = document.getElementById('closeQuickRiskModal');
+const cancelQuickRiskModalBtn = document.getElementById('cancelQuickRiskModal');
+const quickRiskForm = document.getElementById('quickRiskForm');
+
+if (openQuickRiskModalBtn && quickRiskModal) {
+  openQuickRiskModalBtn.addEventListener('click', () => {
+    clearQuickRiskErrors();
+    openModalElement(quickRiskModal);
+  });
+}
+if (closeQuickRiskModalBtn && quickRiskModal) closeQuickRiskModalBtn.addEventListener('click', () => closeModalElement(quickRiskModal));
+if (cancelQuickRiskModalBtn && quickRiskModal) cancelQuickRiskModalBtn.addEventListener('click', () => closeModalElement(quickRiskModal));
+if (quickRiskModal) {
+  quickRiskModal.addEventListener('click', (event) => {
+    if (event.target === quickRiskModal) closeModalElement(quickRiskModal);
+  });
+}
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && quickRiskModal && quickRiskModal.classList.contains('is-open')) {
+    closeModalElement(quickRiskModal);
+  }
+});
+
+document.addEventListener('change', (event) => {
+  if (event.target && event.target.classList && event.target.classList.contains('pgr-risk-check')) {
+    updateRiskSelectionLists();
+  }
+});
+
+if (quickRiskForm) {
+  quickRiskForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearQuickRiskErrors();
+
+    if (!quickRiskForm.reportValidity()) return;
+
+    const button = document.getElementById('saveQuickRiskBtn');
+    const originalText = button ? button.textContent : '';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Salvando...';
+    }
+
+    try {
+      const response = await fetch('/api/risco/novo', {
+        method: 'POST',
+        body: new FormData(quickRiskForm),
+        headers: { 'X-Requested-With': 'fetch' },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        showQuickRiskErrors(payload.errors || ['Não foi possível salvar o risco. Confira os campos e tente novamente.']);
+        return;
+      }
+
+      const autoSelect = !!document.getElementById('quickRiskAutoSelect')?.checked;
+      addRiskToGenerationLists(payload.risk, autoSelect);
+      quickRiskForm.reset();
+      const fontes = quickRiskForm.querySelector('[name="fontes_circunstancias"]');
+      const jornada = quickRiskForm.querySelector('[name="ltcat_periodicidade_jornada"]');
+      const insal = quickRiskForm.querySelector('[name="ltcat_insalubridade"]');
+      const grauInsal = quickRiskForm.querySelector('[name="ltcat_grau_insalubridade"]');
+      const aposentadoria = quickRiskForm.querySelector('[name="ltcat_aposentadoria_especial"]');
+      const autoSelectBox = document.getElementById('quickRiskAutoSelect');
+      if (fontes) fontes.value = 'Durante o processo de trabalho.';
+      if (jornada) jornada.value = 'Mensal (<= 4 horas < 10% jornada)';
+      if (insal) insal.value = 'Não';
+      if (grauInsal) grauInsal.value = 'Não aplicável';
+      if (aposentadoria) aposentadoria.value = 'Não';
+      if (autoSelectBox) autoSelectBox.checked = true;
+      closeModalElement(quickRiskModal);
+      alert('Risco cadastrado sem recarregar a página. Ele já está disponível na lista de riscos.');
+    } catch (error) {
+      showQuickRiskErrors(['Erro de conexão ao salvar o risco. Tente novamente.']);
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+  });
+}

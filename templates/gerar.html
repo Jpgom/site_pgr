@@ -104,6 +104,7 @@
         </div>
         <div class="risk-header-tools">
           <span class="pill count-pill" id="totalRiskSelected">0 riscos selecionados</span>
+          <button class="btn small primary" type="button" id="openQuickRiskModal">+ Cadastrar risco sem sair</button>
           <input class="search" id="riskPickerSearch" placeholder="Buscar risco...">
         </div>
       </div>
@@ -195,4 +196,65 @@
     </div>
   </details>
 </form>
+
+<div class="modal-backdrop" id="quickRiskModal" aria-hidden="true">
+  <div class="modal-card quick-risk-modal" role="dialog" aria-modal="true" aria-labelledby="quickRiskTitle">
+    <div class="modal-head">
+      <div>
+        <p class="eyebrow">Cadastro rápido</p>
+        <h2 id="quickRiskTitle">Cadastrar risco sem sair da geração</h2>
+        <p class="muted">Após salvar, o risco aparece imediatamente nas listas dos setores sem apagar suas seleções.</p>
+      </div>
+      <button class="btn small ghost" type="button" id="closeQuickRiskModal">Fechar</button>
+    </div>
+
+    <form id="quickRiskForm" class="quick-risk-form">
+      <div class="quick-risk-errors" id="quickRiskErrors" aria-live="polite"></div>
+
+      <details class="mini-section" open>
+        <summary>1. Dados principais</summary>
+        <div class="grid-form modal-grid">
+          <label class="span-2"><span>Perigo / Risco</span><input name="risco" required placeholder="Ex.: Ruído contínuo ou intermitente"></label>
+          <label><span>Tipo de Risco</span><select name="tipo_risco" required><option value="">Selecione...</option>{% for option in options.tipos_risco %}<option value="{{ option }}">{{ option }}</option>{% endfor %}</select></label>
+          <label><span>Grau de Severidade</span><select name="grau_severidade" required><option value="">Selecione...</option>{% for option in options.severidades %}<option value="{{ option }}">{{ option }}</option>{% endfor %}</select></label>
+          <label><span>Grau de Possibilidade</span><select name="grau_possibilidade" required><option value="">Selecione...</option>{% for option in options.possibilidades %}<option value="{{ option }}">{{ option }}</option>{% endfor %}</select></label>
+          <label><span>Grau de Nível de Risco</span><select name="grau_nivel_risco" required><option value="">Selecione...</option>{% for option in options.niveis_risco %}<option value="{{ option }}">{{ option }}</option>{% endfor %}</select></label>
+        </div>
+      </details>
+
+      <details class="mini-section" open>
+        <summary>2. PGR e plano de ação</summary>
+        <div class="grid-form modal-grid">
+          <label class="span-2"><span>Ações Preventiva / Corretiva</span><textarea name="acoes" required rows="4" placeholder="Descreva as ações.&#10;TREINAMENTO DE NR – XX"></textarea></label>
+          <label class="span-2"><span>Indicador de Efetividade</span><textarea name="indicador" required rows="3" placeholder="Ex.: Inspeções registradas, ausência de ocorrências e colaboradores orientados."></textarea></label>
+          <label class="span-2"><span>Descrição do agente</span><input name="descricao_agente" placeholder="Se ficar em branco, usa o Perigo/Risco"></label>
+          <label class="span-2"><span>Possíveis lesões ou agravos à saúde</span><textarea name="possiveis_lesoes" required rows="3"></textarea></label>
+          <label class="span-2"><span>Fontes ou circunstâncias</span><textarea name="fontes_circunstancias" required rows="3">Durante o processo de trabalho.</textarea></label>
+          <label><span>EPI</span><textarea name="epis" required rows="3"></textarea></label>
+          <label><span>EPC</span><textarea name="epcs" required rows="3"></textarea></label>
+        </div>
+      </details>
+
+      <details class="mini-section">
+        <summary>3. Dados para LTCAT</summary>
+        <div class="grid-form modal-grid">
+          <label><span>Meio de propagação / via de exposição</span><input name="ltcat_meio_propagacao"></label>
+          <label><span>Periodicidade / jornada de exposição</span><input name="ltcat_periodicidade_jornada" value="Mensal (<= 4 horas < 10% jornada)"></label>
+          <label><span>Insalubridade</span><input name="ltcat_insalubridade" value="Não"></label>
+          <label><span>Grau de insalubridade</span><input name="ltcat_grau_insalubridade" value="Não aplicável"></label>
+          <label><span>Aposentadoria especial</span><input name="ltcat_aposentadoria_especial" value="Não"></label>
+          <label class="span-2"><span>Enquadramento técnico</span><textarea name="ltcat_enquadramento_tecnico" rows="3"></textarea></label>
+          <label class="span-2"><span>Parecer previdenciário</span><textarea name="ltcat_parecer_previdenciario" rows="3"></textarea></label>
+        </div>
+      </details>
+
+      <div class="modal-actions">
+        <label class="quick-auto-select"><input type="checkbox" id="quickRiskAutoSelect" checked> <span>Já marcar este risco nos setores selecionados</span></label>
+        <button class="btn ghost" type="button" id="cancelQuickRiskModal">Cancelar</button>
+        <button class="btn primary" type="submit" id="saveQuickRiskBtn">Salvar risco e continuar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
