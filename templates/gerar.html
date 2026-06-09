@@ -2,231 +2,150 @@
 {% block title %}Gerar Laudos{% endblock %}
 
 {% block content %}
-<section class="panel">
-  <div class="panel-title split">
-    <div>
-      <h2>Gerar laudos completos</h2>
-      <p>Preencha os dados da empresa, escolha cada setor e marque os riscos e exames que entrarão no PGR, PCMSO e LTCAT.</p>
-    </div>
-    <input class="search" id="pgrSectorSearch" placeholder="Buscar por setor, cargo ou risco...">
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Geração</p>
+    <h1>Gerar laudos</h1>
+    <p class="muted">Fluxo enxuto: empresa → grupo → setores → riscos → exames → laudo.</p>
   </div>
+</div>
 
-  <form id="pgrSelectionForm" method="post">
-    <div class="company-box">
-      <div>
-        <h3>Dados do documento</h3>
-        <p>Essas informações preencherão os campos de empresa, CNPJ e vigência nos laudos completos.</p>
-      </div>
-      <div class="company-grid">
-        <label>
-          <span>Empresa</span>
-          <input name="empresa" required placeholder="Ex.: NOME DA EMPRESA LTDA">
+<form id="pgrSelectionForm" method="post" class="wizard">
+  <section class="panel step-panel">
+    <div class="step-number">1</div>
+    <div class="step-content">
+      <h2>Empresa</h2>
+      <p class="muted">Selecione uma empresa cadastrada. Os dados serão usados na Identificação da Empresa dos laudos.</p>
+      {% if companies %}
+        <label class="single-line">
+          <span>Empresa cadastrada</span>
+          <select name="company_id" id="companySelect" required>
+            <option value="">Selecione...</option>
+            {% for company in companies %}
+              <option value="{{ company.id }}">{{ company.nome }} · {{ company.cnpj }}</option>
+            {% endfor %}
+          </select>
         </label>
-        <label>
-          <span>CNPJ</span>
-          <input name="cnpj" required placeholder="Ex.: 00.000.000/0001-00">
-        </label>
-        <label>
-          <span>Data atual / início da vigência</span>
-          <input name="data_atual" value="{{ today }}" placeholder="Ex.: 06/2026">
-        </label>
-        <label>
-          <span>Data final da vigência</span>
-          <input name="data_final" value="{{ next_year }}" placeholder="Ex.: 06/2027">
-        </label>
-      </div>
-
-      <details class="details-box">
-        <summary>Dados complementares para LTCAT / identificação da empresa</summary>
-        <div class="company-grid details-grid">
-          <label>
-            <span>Endereço</span>
-            <input name="endereco" placeholder="Endereço da empresa">
-          </label>
-          <label>
-            <span>Bairro / Cidade</span>
-            <input name="bairro_cidade" placeholder="Bairro / Cidade">
-          </label>
-          <label>
-            <span>CEP</span>
-            <input name="cep" placeholder="CEP">
-          </label>
-          <label>
-            <span>CNAE</span>
-            <input name="cnae" placeholder="CNAE principal">
-          </label>
-          <label class="span-2">
-            <span>Descrição da atividade</span>
-            <input name="descricao_atividade" placeholder="Descrição da atividade principal">
-          </label>
-          <label>
-            <span>Grau de risco</span>
-            <input name="grau_risco" placeholder="Ex.: 1, 2, 3 ou 4">
-          </label>
-          <label>
-            <span>Funcionários</span>
-            <input name="funcionarios" placeholder="Se ficar vazio, calcula pelos cargos selecionados">
-          </label>
-          <label>
-            <span>CNAE secundário</span>
-            <input name="cnae_secundario" placeholder="Opcional">
-          </label>
-          <label>
-            <span>Grau de risco secundário</span>
-            <input name="grau_risco_secundario" placeholder="Opcional">
-          </label>
-          <label class="span-2">
-            <span>Descrição da atividade secundária</span>
-            <input name="descricao_atividade_secundaria" placeholder="Opcional">
-          </label>
-          <label>
-            <span>E-mail</span>
-            <input name="email" placeholder="E-mail da empresa">
-          </label>
-          <label>
-            <span>Fone</span>
-            <input name="fone" placeholder="Telefone da empresa">
-          </label>
-          <label>
-            <span>Data da avaliação / criação do laudo</span>
-            <input name="data_avaliacao" placeholder="Se ficar vazio, usa a data atual/início da vigência">
-          </label>
-        </div>
-      </details>
+      {% else %}
+        <div class="empty left"><strong>Nenhuma empresa cadastrada.</strong><p>Cadastre uma empresa antes de gerar laudos completos.</p><a class="btn primary" href="{{ url_for('create_company') }}">Cadastrar empresa</a></div>
+      {% endif %}
     </div>
+  </section>
 
-    <div class="toolbar toolbar-main">
-      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', true); togglePgrRisks(true); togglePgrExams(true)">Selecionar tudo</button>
-      <button type="button" class="btn ghost" onclick="toggleChecks('pgr_sector_ids', false); togglePgrRisks(false); togglePgrExams(false)">Limpar seleção</button>
-      <button class="btn primary big" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">Gerar PGR completo</button>
-      <button class="btn primary third big" type="submit" formaction="{{ url_for('generate_complete_pcmso') }}">Gerar PCMSO completo</button>
-      <button class="btn primary danger-alt big" type="submit" formaction="{{ url_for('generate_complete_ltcat') }}">Gerar LTCAT completo</button>
-    </div>
-
-    {% if sectors and risks %}
-      <div class="sector-risk-list" id="pgrSectorList">
-        {% for sector in sectors %}
-          <article class="risk-card selectable sector-risk-card" data-search="{{ (sector.setor ~ ' ' ~ sector.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ sector.cargos|map(attribute='cbo')|join(' ') ~ ' ' ~ risks|map(attribute='risco')|join(' ') ~ ' ' ~ risks|map(attribute='tipo_risco')|join(' '))|lower }}">
-            <label class="checkline sector-checkline">
+  <section class="panel step-panel">
+    <div class="step-number">2</div>
+    <div class="step-content">
+      <h2>Grupo e setores</h2>
+      <p class="muted">Escolha o grupo para filtrar e marque os setores que farão parte do laudo.</p>
+      <div class="inline-grid">
+        <label>
+          <span>Grupo de setores</span>
+          <select id="groupFilter">
+            <option value="">Todos os grupos</option>
+            {% for group in grouped_sectors %}
+              <option value="{{ group.id }}">{{ group.nome }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Buscar setor/cargo</span>
+          <input id="pgrSectorSearch" placeholder="Digite para filtrar...">
+        </label>
+      </div>
+      {% if sectors %}
+        <div class="sector-select-list" id="pgrSectorList">
+          {% for sector in sectors %}
+            <label class="list-check sector-option" data-group="{{ sector.grupo_id or '__sem_grupo__' }}" data-search="{{ (sector.grupo_nome ~ ' ' ~ sector.setor ~ ' ' ~ sector.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ sector.cargos|map(attribute='cbo')|join(' '))|lower }}">
               <input type="checkbox" name="pgr_sector_ids" value="{{ sector.id }}">
-              <div>
-                <strong>{{ sector.setor }}</strong>
-                <span>{{ sector.grupo_nome }} · Cargos: {{ sector.cargos|map(attribute='cargo')|join(', ') }}</span>
-              </div>
+              <span><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }} · {{ sector.cargos|map(attribute='cargo')|join(', ') }}</small></span>
             </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty left"><strong>Nenhum setor cadastrado.</strong><p>Cadastre setores/cargos antes de gerar laudos.</p><a class="btn primary" href="{{ url_for('setores') }}">Cadastrar setores</a></div>
+      {% endif %}
+    </div>
+  </section>
 
-            <div class="nested-risks">
-              <span class="nested-title">Riscos que entrarão neste setor</span>
-              <small class="hint">Na LTCAT serão impressos somente FÍSICO, QUÍMICO e BIOLÓGICO. Se o setor não tiver esses tipos, sairá AUSÊNCIA DE RISCOS.</small>
-              <div class="nested-grid">
+  <section class="panel step-panel">
+    <div class="step-number">3</div>
+    <div class="step-content">
+      <div class="split header-line">
+        <div><h2>Riscos por setor</h2><p class="muted">Listas compactas. Na LTCAT só serão impressos FÍSICO, QUÍMICO e BIOLÓGICO.</p></div>
+        <input class="search" id="riskPickerSearch" placeholder="Buscar risco...">
+      </div>
+      {% if risks and sectors %}
+        <div class="accordion-list">
+          {% for sector in sectors %}
+            <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}">
+              <summary><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }} · {{ sector.cargos|length }} cargo(s)</small></summary>
+              <div class="picker-list">
                 {% for risk in risks %}
-                  <label class="mini-check">
+                  <label class="tiny-check risk-option" data-search="{{ (risk.risco ~ ' ' ~ risk.tipo_risco ~ ' ' ~ risk.grau_nivel_risco)|lower }}">
                     <input class="pgr-risk-check" type="checkbox" name="sector_risk_ids_{{ sector.id }}" value="{{ risk.id }}">
-                    <span>
-                      <strong>{{ risk.risco }}</strong>
-                      <small>{{ risk.tipo_risco }} · {{ risk.grau_nivel_risco }}</small>
-                    </span>
+                    <span>{{ risk.risco }}</span><em>{{ risk.tipo_risco }} · {{ risk.grau_nivel_risco }}</em>
                   </label>
                 {% endfor %}
               </div>
-            </div>
+            </details>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty left"><strong>Cadastre riscos e setores para continuar.</strong></div>
+      {% endif %}
+    </div>
+  </section>
 
-            <div class="nested-risks nested-exams">
-              <span class="nested-title">Exames que entrarão neste setor no PCMSO</span>
-              <div class="nested-grid">
+  <section class="panel step-panel">
+    <div class="step-number">4</div>
+    <div class="step-content">
+      <div class="split header-line">
+        <div><h2>Exames por setor</h2><p class="muted">Usado no PCMSO. Marque os exames recomendados para cada setor.</p></div>
+        <input class="search" id="examPickerSearch" placeholder="Buscar exame...">
+      </div>
+      {% if sectors %}
+        <div class="accordion-list">
+          {% for sector in sectors %}
+            <details class="sector-picker" data-sector="{{ sector.id }}" data-group="{{ sector.grupo_id or '__sem_grupo__' }}">
+              <summary><strong>{{ sector.setor }}</strong><small>{{ sector.grupo_nome }}</small></summary>
+              <div class="picker-list">
                 {% for exam in exams %}
-                  <label class="mini-check">
+                  <label class="tiny-check exam-option" data-search="{{ (exam.exame ~ ' ' ~ exam.periodicidade)|lower }}">
                     <input class="pgr-exam-check" type="checkbox" name="sector_exam_ids_{{ sector.id }}" value="{{ exam.id }}">
-                    <span>
-                      <strong>{{ exam.exame }}</strong>
-                      <small>{{ exam.periodicidade }}</small>
-                    </span>
+                    <span>{{ exam.exame }}</span><em>{{ exam.periodicidade }}</em>
                   </label>
                 {% else %}
-                  <div class="empty small-empty">Nenhum exame cadastrado. Cadastre exames para preencher o PCMSO.</div>
+                  <div class="empty left small-empty">Nenhum exame cadastrado.</div>
                 {% endfor %}
               </div>
-            </div>
-          </article>
-        {% endfor %}
-      </div>
+            </details>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </section>
 
-      <div class="toolbar end optional-tools">
-        <span>Exportações avulsas para conferência:</span>
-        <button class="btn ghost" type="submit" formaction="{{ url_for('generate_action_plan') }}">Plano de Ação</button>
-        <button class="btn ghost" type="submit" formaction="{{ url_for('generate_risco_pgr') }}">Inventário/Risco PGR</button>
-        <button class="btn ghost" type="submit" formaction="{{ url_for('generate_riscos_pcmso') }}">Riscos/Exames PCMSO</button>
-      </div>
-    {% elif not sectors %}
-      <div class="empty">
-        <strong>Nenhum setor cadastrado ainda.</strong>
-        <p>Cadastre setores/cargos antes de gerar o PGR completo.</p>
-        <a class="btn primary" href="{{ url_for('setores') }}">Cadastrar setores/cargos</a>
-      </div>
-    {% else %}
-      <div class="empty">
-        <strong>Nenhum risco cadastrado ainda.</strong>
-        <p>Cadastre riscos antes de gerar o PGR completo.</p>
-        <a class="btn primary" href="{{ url_for('cadastro') }}">Cadastrar riscos</a>
-      </div>
-    {% endif %}
-  </form>
-</section>
-
-<section class="panel compact-panel">
-  <div class="panel-title split">
+  <section class="panel sticky-generate">
     <div>
-      <h2>Blocos avulsos de setor</h2>
-      <p>Use somente se quiser conferir a Relação Função x Atividade ou o Descritivo Setor separadamente.</p>
+      <strong>Gerar documentos</strong>
+      <span>Os laudos serão gerados conforme a empresa, setores, riscos e exames selecionados.</span>
     </div>
-    <input class="search" id="sectorSearch" placeholder="Buscar por setor ou cargo...">
-  </div>
-
-  <form id="sectorSelectionForm" method="post">
-    <div class="date-grid">
-      <label>
-        <span>Data inicial da vigência</span>
-        <input name="data_atual" value="{{ today }}" placeholder="Ex.: 06/2026">
-      </label>
-      <label>
-        <span>Data final da vigência</span>
-        <input name="data_final" value="{{ next_year }}" placeholder="Ex.: 06/2027">
-      </label>
+    <div class="actions">
+      <button class="btn primary" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">PGR completo</button>
+      <button class="btn primary third" type="submit" formaction="{{ url_for('generate_complete_pcmso') }}">PCMSO completo</button>
+      <button class="btn primary danger-alt" type="submit" formaction="{{ url_for('generate_complete_ltcat') }}">LTCAT completo</button>
     </div>
+  </section>
 
-    <div class="toolbar">
-      <button type="button" class="btn ghost" onclick="toggleChecks('sector_ids', true)">Selecionar todos</button>
-      <button type="button" class="btn ghost" onclick="toggleChecks('sector_ids', false)">Limpar seleção</button>
-      <button class="btn primary alt" type="submit" formaction="{{ url_for('generate_relacao_funcao_atividade') }}">Gerar Relação Função x Atividade</button>
-      <button class="btn primary third" type="submit" formaction="{{ url_for('generate_descritivo_setor') }}">Gerar Descritivo Setor</button>
+  <details class="panel optional-tools">
+    <summary class="panel-summary"><span>Exportações avulsas</span><small>Para conferência técnica dos blocos isolados</small></summary>
+    <div class="actions wrap">
+      <button class="btn ghost" type="submit" formaction="{{ url_for('generate_action_plan') }}">Plano de Ação</button>
+      <button class="btn ghost" type="submit" formaction="{{ url_for('generate_risco_pgr') }}">Inventário/Risco PGR</button>
+      <button class="btn ghost" type="submit" formaction="{{ url_for('generate_riscos_pcmso') }}">Riscos/Exames PCMSO</button>
+      <button class="btn ghost" type="submit" formaction="{{ url_for('generate_relacao_funcao_atividade') }}">Relação Função x Atividade</button>
+      <button class="btn ghost" type="submit" formaction="{{ url_for('generate_descritivo_setor') }}">Descritivo Setor</button>
     </div>
-
-    {% if sectors %}
-      <div class="risk-list" id="sectorList">
-        {% for item in sectors %}
-          <article class="risk-card selectable sector-card" data-search="{{ (item.setor ~ ' ' ~ item.cargos|map(attribute='cargo')|join(' ') ~ ' ' ~ item.cargos|map(attribute='cbo')|join(' '))|lower }}">
-            <label class="checkline">
-              <input type="checkbox" name="sector_ids" value="{{ item.id }}">
-              <div>
-                <strong>{{ item.setor }}</strong>
-                <span>{{ item.cargos|length }} cargo(s) cadastrado(s)</span>
-              </div>
-            </label>
-            <ul class="mini-list">
-              {% for cargo in item.cargos %}
-                <li><strong>{{ cargo.cargo }}</strong> · CBO: {{ cargo.cbo }} · {{ cargo.n_func }} funcionário(s)</li>
-              {% endfor %}
-            </ul>
-          </article>
-        {% endfor %}
-      </div>
-    {% else %}
-      <div class="empty">
-        <strong>Nenhum setor cadastrado ainda.</strong>
-        <p>Volte para a tela de setores e cadastre os setores/cargos antes de gerar esses blocos.</p>
-        <a class="btn primary" href="{{ url_for('setores') }}">Cadastrar setores/cargos</a>
-      </div>
-    {% endif %}
-  </form>
-</section>
+  </details>
+</form>
 {% endblock %}

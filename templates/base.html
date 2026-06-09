@@ -15,6 +15,7 @@
     <nav>
       <a class="{% if request.endpoint in ['cadastro', 'edit_risk'] %}active{% endif %}" href="{{ url_for('cadastro') }}">Riscos</a>
       <a class="{% if request.endpoint in ['setores', 'edit_sector'] %}active{% endif %}" href="{{ url_for('setores') }}">Setores/Cargos</a>
+      <a class="{% if request.endpoint in ['empresas', 'create_company', 'edit_company'] %}active{% endif %}" href="{{ url_for('empresas') }}">Empresas</a>
       <a class="{% if request.endpoint in ['exames', 'create_exam', 'edit_exam'] %}active{% endif %}" href="{{ url_for('exames') }}">Exames</a>
       <a class="{% if request.endpoint == 'gerar' %}active{% endif %}" href="{{ url_for('gerar') }}">Gerar laudos</a>
     </nav>

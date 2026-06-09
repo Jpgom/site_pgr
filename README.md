@@ -1,47 +1,19 @@
-# Site de Cadastro de Riscos SST - PGR e PCMSO
+# Automação SST - PGR, PCMSO e LTCAT
 
-Sistema em Flask para cadastrar riscos, setores/cargos e exames, gerando documentos Word a partir dos modelos de SST.
+Sistema Flask para cadastro de riscos, setores/cargos, empresas, exames e geração de laudos em Word.
 
-## O que esta versão faz
+## Funcionalidades
 
-- Usa banco de dados para guardar os cadastros.
-- Funciona localmente com SQLite automaticamente.
-- Funciona no Render com PostgreSQL usando a variável `DATABASE_URL`.
-- Mantém os riscos cadastrados no sistema.
-- Permite cadastrar, editar e excluir setores/cargos.
-- Permite apagar todos os setores/cargos de uma vez, sem apagar os riscos.
-- Permite cadastrar, editar e excluir exames do PCMSO.
-- Gera o PGR completo preenchendo:
-  - Empresa;
-  - CNPJ;
-  - Data atual / início da vigência;
-  - Data final da vigência;
-  - Relação Função x Atividade;
-  - Descritivo dos setores;
-  - Inventário/Risco PGR por setor;
-  - Plano de Ação.
-- Gera o PCMSO completo preenchendo:
-  - Empresa;
-  - CNPJ;
-  - Datas de vigência;
-  - Relação Função x Atividade;
-  - Riscos por setor;
-  - Exames recomendados por setor.
+- Cadastro de riscos ocupacionais com dados para PGR, PCMSO, Plano de Ação e LTCAT.
+- Cadastro de setores/cargos organizados por grupos.
+- Cadastro completo de empresas para preencher a Identificação da Empresa nos laudos.
+- Cadastro de exames para o PCMSO.
+- Geração de PGR completo.
+- Geração de PCMSO completo.
+- Geração de LTCAT completo.
+- Exportações avulsas: Plano de Ação, Inventário PGR, Riscos/Exames PCMSO, Relação Função x Atividade e Descritivo Setor.
 
-## Regras mantidas
-
-- Os riscos de cada setor saem um abaixo do outro.
-- A frase “NENHUM FATOR DE RISCO PSICOSSOCIAL...” aparece somente quando o setor **não** tiver risco do tipo `ERGONÔMICO PSICOSSOCIAL`.
-- Quando houver risco psicossocial no setor, essa frase é removida.
-- No Plano de Ação do PGR:
-  - Riscos comuns usam `Data atual / início da vigência` como **Prazo de Implantação**.
-  - Riscos comuns usam `Data final da vigência` como **Prazo Reavaliação**.
-  - Riscos do tipo `ERGONÔMICO PSICOSSOCIAL` usam **30 DIAS** e **180 DIAS**.
-- As células coloridas continuam com texto preto.
-- No PCMSO, os exames selecionados por setor saem um abaixo do outro.
-- Os campos Admissional, Periódico, Retorno ao Trabalho, Mudança de Risco e Demissional dos exames são campos de texto livre.
-
-## Como rodar localmente
+## Rodar localmente
 
 ```bash
 python -m venv venv
@@ -56,55 +28,27 @@ Acesse:
 http://127.0.0.1:5000
 ```
 
-O banco local será criado automaticamente em:
+## Deploy no Render
 
-```text
-instance/sst_riscos.db
+O projeto está pronto para Render com PostgreSQL.
+
+Arquivos importantes:
+
+- `render.yaml`
+- `Procfile`
+- `runtime.txt`
+- `requirements.txt`
+
+No Render, use Blueprint apontando para o repositório GitHub. O sistema usa `DATABASE_URL` quando existir; localmente usa SQLite automático em `instance/sst_riscos.db`.
+
+## Atualizações
+
+Para atualizar no Render, substitua os arquivos, depois rode:
+
+```bash
+git add .
+git commit -m "atualizacao do sistema"
+git push
 ```
 
-## Como subir no Render
-
-### Opção 1 - Blueprint
-
-1. Suba esta pasta para um repositório no GitHub.
-2. No Render, escolha a opção de criar serviço via Blueprint.
-3. Selecione o arquivo `render.yaml` deste projeto.
-4. O Render criará o serviço web e o banco PostgreSQL conforme as configurações do arquivo.
-
-### Opção 2 - Manual
-
-1. Crie um Web Service no Render apontando para o repositório.
-2. Configure:
-
-```text
-Build Command: pip install -r requirements.txt
-Start Command: gunicorn app:app
-```
-
-3. Crie um banco PostgreSQL no Render.
-4. Copie a connection string do banco para a variável de ambiente:
-
-```text
-DATABASE_URL
-```
-
-5. Crie também a variável:
-
-```text
-SECRET_KEY
-```
-
-com qualquer valor forte/aleatório.
-
-## Estrutura principal
-
-```text
-app.py                  Rotas, banco de dados e fluxo do sistema
-word_generator.py       Geração dos arquivos Word
-modelos/                Modelos DOCX usados na geração
-templates/              Telas HTML
-static/                 CSS e JS
-requirements.txt        Dependências do projeto
-Procfile                Start command para deploy
-render.yaml             Blueprint para Render
-```
+O banco existente é preservado. As novas tabelas/colunas são criadas automaticamente ao iniciar o sistema.

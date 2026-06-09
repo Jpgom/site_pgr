@@ -539,6 +539,7 @@ def generate_relacao_funcao_atividade_docx(
     output_path: str | Path,
     data_atual: str | None = None,
     data_final: str | None = None,
+    company_extra: Mapping[str, Any] | None = None,
 ) -> Path:
     sectors = [_sanitize_sector(sector) for sector in sectors]
     if not sectors:
@@ -815,6 +816,106 @@ def _unique_sectors_from_groups(groups: list[Mapping[str, Any]]) -> list[dict[st
     return sectors
 
 
+
+
+def _company_dict_for_docs(empresa: str, cnpj: str, data_atual: str, data_final: str, extra: Mapping[str, Any] | None = None) -> dict[str, str]:
+    extra = extra or {}
+    def pick(*keys: str) -> str:
+        for key in keys:
+            value = extra.get(key)
+            if value not in (None, ""):
+                return str(value).strip()
+        return ""
+    return {
+        "empresa": str(empresa or pick("empresa", "nome")).strip(),
+        "cnpj": str(cnpj or pick("cnpj")).strip(),
+        "data_atual": str(data_atual or pick("data_atual")).strip(),
+        "data_final": str(data_final or pick("data_final")).strip(),
+        "endereco": pick("endereco"),
+        "bairro_cidade": pick("bairro_cidade", "bairro/cidade"),
+        "cep": pick("cep"),
+        "cnae": pick("cnae", "cnae1"),
+        "descricao_atividade": pick("descricao_atividade", "descricao1"),
+        "grau_risco": pick("grau_risco", "grau1"),
+        "cnae_secundario": pick("cnae_secundario", "cnae2"),
+        "descricao_atividade_secundaria": pick("descricao_atividade_secundaria", "descricao2"),
+        "grau_risco_secundario": pick("grau_risco_secundario", "grau2"),
+        "funcionarios": pick("funcionarios"),
+        "email": pick("email"),
+        "fone": pick("fone"),
+        "data_avaliacao": pick("data_avaliacao") or str(data_atual or "").strip(),
+    }
+
+
+def _total_funcionarios_from_sectors(sectors: list[Mapping[str, Any]]) -> str:
+    total = 0
+    for sector in sectors:
+        for cargo in sector.get("cargos", []) or []:
+            try:
+                total += int(str(cargo.get("n_func", "")).strip() or "0")
+            except ValueError:
+                pass
+    return str(total) if total else ""
+
+
+def _company_replacements(company: Mapping[str, str]) -> dict[str, str]:
+    funcionarios = company.get("funcionarios", "")
+    return {
+        "{{EMPRESA}}": company.get("empresa", ""),
+        "{{empresa}}": company.get("empresa", ""),
+        "{{CNPJ}}": company.get("cnpj", ""),
+        "{{DATAATUAL}}": company.get("data_atual", ""),
+        "{{DATAFINAL}}": company.get("data_final", ""),
+        "{{DATA DO LAUDO}}": company.get("data_atual", ""),
+        "{{ENDERECO}}": company.get("endereco", ""),
+        "{{BAIRRO/CIDADE}}": company.get("bairro_cidade", ""),
+        "{{CEP}}": company.get("cep", ""),
+        "{{CNAE1}}": company.get("cnae", ""),
+        "{{DESCRICAO1}}": company.get("descricao_atividade", ""),
+        "{{GRAU1}}": company.get("grau_risco", ""),
+        "{{CNAE2}}": company.get("cnae_secundario", ""),
+        "{{DESCRICAO2}}": company.get("descricao_atividade_secundaria", ""),
+        "{{GRAU2}}": company.get("grau_risco_secundario", ""),
+        "{{N°FUNCIONARIOS}}": funcionarios,
+        "{{EMAIL}}": company.get("email", ""),
+        "{{FONE}}": company.get("fone", ""),
+        "{{datacriacaolaudo}}": company.get("data_avaliacao") or company.get("data_atual", ""),
+    }
+
+
+def _fill_company_identification_tables(doc: Document, company: Mapping[str, str], sectors: list[Mapping[str, Any]]) -> None:
+    funcionarios = company.get("funcionarios") or _total_funcionarios_from_sectors(sectors)
+    values_by_label = {
+        "EMPRESA": company.get("empresa", ""),
+        "ENDEREÇO": company.get("endereco", ""),
+        "BAIRRO / CIDADE": company.get("bairro_cidade", ""),
+        "CEP": company.get("cep", ""),
+        "CNPJ": company.get("cnpj", ""),
+        "CNAE": company.get("cnae", ""),
+        "GRAU DE RISCO": company.get("grau_risco", ""),
+        "CNAE (SECUNDÁRIO)": company.get("cnae_secundario", ""),
+        "GRAU DE RISCO (SECUNDÁRIO)": company.get("grau_risco_secundario", ""),
+        "FUNCIONÁRIOS": funcionarios,
+        "VIGÊNCIA": f"{company.get('data_atual','')} – {company.get('data_final','')}",
+        "EMAIL": company.get("email", ""),
+        "FONE": company.get("fone", ""),
+    }
+    for table in doc.tables:
+        labels = [row.cells[0].text.strip().upper() for row in table.rows if row.cells]
+        if "EMPRESA" not in labels or not any(label in labels for label in ("CNPJ", "VIGÊNCIA", "CNAE", "FUNCIONÁRIOS")):
+            continue
+        descricao_seen = 0
+        for row in table.rows:
+            if len(row.cells) < 2:
+                continue
+            label = row.cells[0].text.strip().upper()
+            if label == "DESCRIÇÃO DA ATIVIDADE":
+                descricao_seen += 1
+                value = company.get("descricao_atividade_secundaria", "") if descricao_seen == 2 else company.get("descricao_atividade", "")
+                _ltcat_set_cell_text(row.cells[1], value)
+            elif label in values_by_label:
+                _ltcat_set_cell_text(row.cells[1], values_by_label[label])
+
 def generate_complete_pgr_docx(
     groups_or_risks: Iterable[Mapping[str, Any]],
     output_path: str | Path,
@@ -822,6 +923,7 @@ def generate_complete_pgr_docx(
     cnpj: str,
     data_atual: str | None = None,
     data_final: str | None = None,
+    company_extra: Mapping[str, Any] | None = None,
 ) -> Path:
     """Gera o PGR completo preenchendo o modelo principal com todos os blocos já criados."""
     items = list(groups_or_risks)
@@ -845,6 +947,7 @@ def generate_complete_pgr_docx(
     cnpj = str(cnpj).strip()
     data_atual = (data_atual or datetime.now().strftime("%d/%m/%Y")).strip()
     data_final = (data_final or "").strip()
+    company = _company_dict_for_docs(empresa, cnpj, data_atual, data_final, company_extra)
 
     doc = Document(str(TEMPLATE_PGR_COMPLETO_PATH))
 
@@ -863,16 +966,8 @@ def generate_complete_pgr_docx(
     _replace_xml_element_with(risco_pgr_table.getparent(), risco_pgr_table, _build_risco_pgr_elements(risco_pgr_table, groups, break_before_first=False))
     _replace_xml_element_with(plano_table.getparent(), plano_table, _build_action_plan_elements(plano_table, groups, data_atual=data_atual, data_final=data_final))
 
-    _replace_doc_placeholders(
-        doc,
-        {
-            "{{EMPRESA}}": empresa,
-            "{{CNPJ}}": cnpj,
-            "{{DATAATUAL}}": data_atual,
-            "{{DATAFINAL}}": data_final,
-            "{{DATA DO LAUDO}}": data_atual,
-        },
-    )
+    _fill_company_identification_tables(doc, company, sectors)
+    _replace_doc_placeholders(doc, _company_replacements(company))
 
     # Ajustes de layout solicitados:
     # - manter o bloco Data do documento/Revisão compacto e ainda na primeira página;
@@ -1057,6 +1152,7 @@ def generate_complete_pcmso_docx(
     cnpj: str,
     data_atual: str | None = None,
     data_final: str | None = None,
+    company_extra: Mapping[str, Any] | None = None,
 ) -> Path:
     groups = _sanitize_pcmso_groups(groups)
     if not groups:
@@ -1072,18 +1168,15 @@ def generate_complete_pcmso_docx(
     data_atual = (data_atual or datetime.now().strftime("%m/%Y")).strip()
     data_final = (data_final or "").strip()
 
+    company = _company_dict_for_docs(empresa, cnpj, data_atual, data_final, company_extra)
     doc = Document(str(TEMPLATE_PCMSO_COMPLETO_PATH))
     relation_table = _find_table_xml(doc, ["{{CARGO}}", "{{CBOCARGO}}", "{{N°FUNC}}", "{{DESCRIÇÃO ATIVIDADE}}"])
     sectors = _unique_sectors_from_groups(groups)
     _replace_xml_element_with(relation_table.getparent(), relation_table, _build_relacao_elements(relation_table, sectors, data_atual, data_final))
     _replace_pcmso_riscos_area(doc, groups)
 
-    _replace_doc_placeholders(doc, {
-        "{{EMPRESA}}": empresa,
-        "{{CNPJ}}": cnpj,
-        "{{DATAATUAL}}": data_atual,
-        "{{DATAFINAL}}": data_final,
-    })
+    _fill_company_identification_tables(doc, company, sectors)
+    _replace_doc_placeholders(doc, _company_replacements(company))
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
@@ -1201,12 +1294,12 @@ def _ltcat_company_dict(empresa: str, cnpj: str, data_atual: str, data_final: st
         "endereco": str(extra.get("endereco", "") or "").strip(),
         "bairro_cidade": str(extra.get("bairro_cidade", "") or "").strip(),
         "cep": str(extra.get("cep", "") or "").strip(),
-        "cnae": str(extra.get("cnae", "") or "").strip(),
-        "descricao_atividade": str(extra.get("descricao_atividade", "") or "").strip(),
-        "grau_risco": str(extra.get("grau_risco", "") or "").strip(),
-        "cnae_secundario": str(extra.get("cnae_secundario", "") or "").strip(),
-        "descricao_atividade_secundaria": str(extra.get("descricao_atividade_secundaria", "") or "").strip(),
-        "grau_risco_secundario": str(extra.get("grau_risco_secundario", "") or "").strip(),
+        "cnae": str(extra.get("cnae", extra.get("cnae1", "")) or "").strip(),
+        "descricao_atividade": str(extra.get("descricao_atividade", extra.get("descricao1", "")) or "").strip(),
+        "grau_risco": str(extra.get("grau_risco", extra.get("grau1", "")) or "").strip(),
+        "cnae_secundario": str(extra.get("cnae_secundario", extra.get("cnae2", "")) or "").strip(),
+        "descricao_atividade_secundaria": str(extra.get("descricao_atividade_secundaria", extra.get("descricao2", "")) or "").strip(),
+        "grau_risco_secundario": str(extra.get("grau_risco_secundario", extra.get("grau2", "")) or "").strip(),
         "funcionarios": str(extra.get("funcionarios", "") or "").strip(),
         "email": str(extra.get("email", "") or "").strip(),
         "fone": str(extra.get("fone", "") or "").strip(),
@@ -1451,14 +1544,7 @@ def generate_complete_ltcat_docx(
     sectors = [group["sector"] for group in groups]
     data_avaliacao = company.get("data_avaliacao") or data_atual
 
-    _replace_doc_placeholders(doc, {
-        "{{EMPRESA}}": company.get("empresa", ""),
-        "{{empresa}}": company.get("empresa", ""),
-        "{{CNPJ}}": company.get("cnpj", ""),
-        "{{DATAATUAL}}": data_atual,
-        "{{DATAFINAL}}": data_final,
-        "{{datacriacaolaudo}}": data_avaliacao,
-    })
+    _replace_doc_placeholders(doc, _company_replacements(company))
     _ltcat_fill_company_table(doc, company, sectors)
     _ltcat_fill_relacao_funcoes(doc, sectors, data_atual, data_final)
     _ltcat_fill_descritivo_setores(doc, sectors)

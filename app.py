@@ -182,6 +182,63 @@ class Exam(db.Model):
         }
 
 
+class Company(db.Model):
+    __tablename__ = "companies"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    nome = db.Column(db.String(255), nullable=False)
+    cnpj = db.Column(db.String(40), nullable=False)
+    endereco = db.Column(db.String(255), default="")
+    bairro_cidade = db.Column(db.String(255), default="")
+    cep = db.Column(db.String(40), default="")
+    cnae1 = db.Column(db.String(80), default="")
+    descricao1 = db.Column(Text, default="")
+    grau1 = db.Column(db.String(40), default="")
+    cnae2 = db.Column(db.String(80), default="")
+    descricao2 = db.Column(Text, default="")
+    grau2 = db.Column(db.String(40), default="")
+    funcionarios = db.Column(db.String(40), default="")
+    data_atual = db.Column(db.String(40), default="")
+    data_final = db.Column(db.String(40), default="")
+    email = db.Column(db.String(255), default="")
+    fone = db.Column(db.String(80), default="")
+    data_avaliacao = db.Column(db.String(40), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "nome": self.nome,
+            "empresa": self.nome,
+            "cnpj": self.cnpj,
+            "endereco": self.endereco or "",
+            "bairro_cidade": self.bairro_cidade or "",
+            "cep": self.cep or "",
+            "cnae1": self.cnae1 or "",
+            "descricao1": self.descricao1 or "",
+            "grau1": self.grau1 or "",
+            "cnae2": self.cnae2 or "",
+            "descricao2": self.descricao2 or "",
+            "grau2": self.grau2 or "",
+            "funcionarios": self.funcionarios or "",
+            "data_atual": self.data_atual or "",
+            "data_final": self.data_final or "",
+            "email": self.email or "",
+            "fone": self.fone or "",
+            "data_avaliacao": self.data_avaliacao or "",
+            # aliases usados pelos geradores antigos
+            "cnae": self.cnae1 or "",
+            "descricao_atividade": self.descricao1 or "",
+            "grau_risco": self.grau1 or "",
+            "cnae_secundario": self.cnae2 or "",
+            "descricao_atividade_secundaria": self.descricao2 or "",
+            "grau_risco_secundario": self.grau2 or "",
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+        }
+
+
 FORM_OPTIONS = {
     "tipos_risco": list(TIPO_RISCO_COLORS.keys()),
     "severidades": list(SEVERIDADE_COLORS.keys()),
@@ -280,6 +337,15 @@ def _ensure_schema_columns() -> None:
     add_column("risks", "ltcat_enquadramento_tecnico TEXT")
     add_column("risks", "ltcat_parecer_previdenciario TEXT")
     add_column("risks", "ltcat_periodicidade_jornada TEXT")
+    # Evolução segura do banco para o cadastro completo de empresas.
+    for col in [
+        "nome VARCHAR(255)", "cnpj VARCHAR(40)", "endereco VARCHAR(255)", "bairro_cidade VARCHAR(255)",
+        "cep VARCHAR(40)", "cnae1 VARCHAR(80)", "descricao1 TEXT", "grau1 VARCHAR(40)",
+        "cnae2 VARCHAR(80)", "descricao2 TEXT", "grau2 VARCHAR(40)", "funcionarios VARCHAR(40)",
+        "data_atual VARCHAR(40)", "data_final VARCHAR(40)", "email VARCHAR(255)", "fone VARCHAR(80)",
+        "data_avaliacao VARCHAR(40)",
+    ]:
+        add_column("companies", col)
     db.session.commit()
 
 
@@ -394,6 +460,63 @@ def _sector_from_dict(data: dict[str, Any], sector: Sector | None = None) -> Sec
     return sector
 
 
+
+
+def _form_to_company(existing_id: str | None = None) -> dict[str, Any]:
+    return {
+        "id": existing_id or uuid.uuid4().hex,
+        "nome": _field("nome") or _field("empresa"),
+        "empresa": _field("nome") or _field("empresa"),
+        "cnpj": _field("cnpj"),
+        "endereco": _field("endereco"),
+        "bairro_cidade": _field("bairro_cidade"),
+        "cep": _field("cep"),
+        "cnae1": _field("cnae1") or _field("cnae"),
+        "descricao1": _field("descricao1") or _field("descricao_atividade"),
+        "grau1": _field("grau1") or _field("grau_risco"),
+        "cnae2": _field("cnae2") or _field("cnae_secundario"),
+        "descricao2": _field("descricao2") or _field("descricao_atividade_secundaria"),
+        "grau2": _field("grau2") or _field("grau_risco_secundario"),
+        "funcionarios": _field("funcionarios"),
+        "data_atual": _field("data_atual"),
+        "data_final": _field("data_final"),
+        "email": _field("email"),
+        "fone": _field("fone"),
+        "data_avaliacao": _field("data_avaliacao"),
+    }
+
+
+def _company_from_dict(data: dict[str, Any], company: Company | None = None) -> Company:
+    company = company or Company(id=data["id"])
+    company.nome = data.get("nome") or data.get("empresa", "")
+    company.cnpj = data.get("cnpj", "")
+    company.endereco = data.get("endereco", "")
+    company.bairro_cidade = data.get("bairro_cidade", "")
+    company.cep = data.get("cep", "")
+    company.cnae1 = data.get("cnae1", "")
+    company.descricao1 = data.get("descricao1", "")
+    company.grau1 = data.get("grau1", "")
+    company.cnae2 = data.get("cnae2", "")
+    company.descricao2 = data.get("descricao2", "")
+    company.grau2 = data.get("grau2", "")
+    company.funcionarios = data.get("funcionarios", "")
+    company.data_atual = data.get("data_atual", "")
+    company.data_final = data.get("data_final", "")
+    company.email = data.get("email", "")
+    company.fone = data.get("fone", "")
+    company.data_avaliacao = data.get("data_avaliacao", "")
+    company.updated_at = datetime.utcnow()
+    return company
+
+
+def _validate_company(company: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not company.get("nome"):
+        errors.append("Preencha o nome da empresa.")
+    if not company.get("cnpj"):
+        errors.append("Preencha o CNPJ da empresa.")
+    return errors
+
 def _exam_from_dict(data: dict[str, Any], exam: Exam | None = None) -> Exam:
     exam = exam or Exam(id=data["id"])
     exam.exame = data["exame"]
@@ -481,6 +604,47 @@ def _sorted_groups() -> list[dict[str, Any]]:
     return [group.to_dict() for group in SectorGroup.query.order_by(SectorGroup.nome.asc()).all()]
 
 
+
+
+def _sorted_companies() -> list[dict[str, Any]]:
+    return [company.to_dict() for company in Company.query.order_by(Company.nome.asc()).all()]
+
+
+def _grouped_sectors() -> list[dict[str, Any]]:
+    sectors = _sorted_sectors()
+    grouped: dict[str, dict[str, Any]] = {}
+    for sector in sectors:
+        gid = sector.get("grupo_id") or "__sem_grupo__"
+        if gid not in grouped:
+            grouped[gid] = {
+                "id": gid,
+                "nome": sector.get("grupo_nome") or "Sem grupo",
+                "sectors": [],
+            }
+        grouped[gid]["sectors"].append(sector)
+    return sorted(grouped.values(), key=lambda item: (item["nome"] == "Sem grupo", item["nome"].lower()))
+
+
+def _company_payload_from_form() -> dict[str, str]:
+    company_id = _field("company_id")
+    if company_id:
+        company = db.session.get(Company, company_id)
+        if company:
+            data = company.to_dict()
+            # Permite sobrescrever a vigência se um campo de formulário existir no futuro.
+            data["data_atual"] = _field("data_atual") or data.get("data_atual", "")
+            data["data_final"] = _field("data_final") or data.get("data_final", "")
+            return data
+    data = _form_to_company()
+    data["empresa"] = data.get("nome", "")
+    data["cnae"] = data.get("cnae1", "")
+    data["descricao_atividade"] = data.get("descricao1", "")
+    data["grau_risco"] = data.get("grau1", "")
+    data["cnae_secundario"] = data.get("cnae2", "")
+    data["descricao_atividade_secundaria"] = data.get("descricao2", "")
+    data["grau_risco_secundario"] = data.get("grau2", "")
+    return data
+
 def _selected_risks() -> list[dict[str, Any]]:
     selected_ids = request.form.getlist("risk_ids")
     if not selected_ids:
@@ -492,7 +656,7 @@ def _selected_risks() -> list[dict[str, Any]]:
 
 
 def _selected_sectors() -> list[dict[str, Any]]:
-    selected_ids = request.form.getlist("sector_ids")
+    selected_ids = request.form.getlist("sector_ids") or request.form.getlist("pgr_sector_ids")
     if not selected_ids:
         return []
     sectors = Sector.query.filter(Sector.id.in_(selected_ids)).all()
@@ -542,7 +706,7 @@ def cadastro():
 
 @app.route("/setores")
 def setores():
-    return render_template("setores.html", sectors=_sorted_sectors(), groups=_sorted_groups())
+    return render_template("setores.html", sectors=_sorted_sectors(), groups=_sorted_groups(), grouped_sectors=_grouped_sectors())
 
 
 @app.post("/grupo/novo")
@@ -571,6 +735,60 @@ def delete_group(group_id: str):
         flash("Grupo excluído. Os setores foram mantidos sem grupo.", "success")
     return redirect(url_for("setores"))
 
+
+
+
+@app.route("/empresas")
+def empresas():
+    return render_template("empresas.html", companies=_sorted_companies())
+
+
+@app.route("/empresa/nova", methods=["GET", "POST"])
+def create_company():
+    if request.method == "POST":
+        company = _form_to_company()
+        errors = _validate_company(company)
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("empresa_form.html", company=company, title="Nova empresa")
+        db.session.add(_company_from_dict(company))
+        db.session.commit()
+        flash("Empresa cadastrada com sucesso.", "success")
+        return redirect(url_for("empresas"))
+    today = datetime.now().strftime("%m/%Y")
+    next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")
+    return render_template("empresa_form.html", company={"data_atual": today, "data_final": next_year}, title="Nova empresa")
+
+
+@app.route("/empresa/<company_id>/editar", methods=["GET", "POST"])
+def edit_company(company_id: str):
+    company_model = db.session.get(Company, company_id)
+    if not company_model:
+        flash("Empresa não encontrada.", "error")
+        return redirect(url_for("empresas"))
+    if request.method == "POST":
+        updated = _form_to_company(existing_id=company_id)
+        errors = _validate_company(updated)
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("empresa_form.html", company={**company_model.to_dict(), **updated}, title="Editar empresa")
+        _company_from_dict(updated, company_model)
+        db.session.commit()
+        flash("Empresa atualizada com sucesso.", "success")
+        return redirect(url_for("empresas"))
+    return render_template("empresa_form.html", company=company_model.to_dict(), title="Editar empresa")
+
+
+@app.post("/empresa/<company_id>/excluir")
+def delete_company(company_id: str):
+    company_model = db.session.get(Company, company_id)
+    if company_model:
+        db.session.delete(company_model)
+        db.session.commit()
+        flash("Empresa excluída.", "success")
+    return redirect(url_for("empresas"))
 
 @app.route("/exames")
 def exames():
@@ -633,6 +851,8 @@ def gerar():
         sectors=_sorted_sectors(),
         exams=_sorted_exams(),
         groups=_sorted_groups(),
+        grouped_sectors=_grouped_sectors(),
+        companies=_sorted_companies(),
         options=FORM_OPTIONS,
         today=today,
         next_year=next_year,
@@ -764,12 +984,7 @@ def _selected_sector_ltcat_groups() -> tuple[list[dict[str, Any]], list[str]]:
 
 
 def _company_extra_from_form() -> dict[str, str]:
-    keys = [
-        "endereco", "bairro_cidade", "cep", "cnae", "descricao_atividade", "grau_risco",
-        "cnae_secundario", "descricao_atividade_secundaria", "grau_risco_secundario",
-        "funcionarios", "email", "fone", "data_avaliacao",
-    ]
-    return {key: _field(key) for key in keys}
+    return _company_payload_from_form()
 
 
 def _send_generated_docx(generator, selected: list[dict[str, Any]], stem: str, download_name: str, *args):
@@ -797,15 +1012,16 @@ def generate_complete_pgr():
             flash(error, "error")
         return redirect(url_for("gerar"))
     try:
-        empresa = _field("empresa")
-        cnpj = _field("cnpj")
-        data_atual = _field("data_atual")
-        data_final = _field("data_final")
+        company = _company_payload_from_form()
+        empresa = company.get("empresa") or company.get("nome", "")
+        cnpj = company.get("cnpj", "")
+        data_atual = company.get("data_atual", "")
+        data_final = company.get("data_final", "")
         if not empresa:
-            flash("Preencha o nome da empresa para gerar o PGR completo.", "error")
+            flash("Selecione ou cadastre uma empresa para gerar o PGR completo.", "error")
             return redirect(url_for("gerar"))
         if not cnpj:
-            flash("Preencha o CNPJ da empresa para gerar o PGR completo.", "error")
+            flash("Cadastre o CNPJ da empresa para gerar o PGR completo.", "error")
             return redirect(url_for("gerar"))
         return _send_generated_docx(
             generate_complete_pgr_docx,
@@ -816,6 +1032,7 @@ def generate_complete_pgr():
             cnpj,
             data_atual,
             data_final,
+            company,
         )
     except Exception as exc:
         flash(f"Erro ao gerar PGR completo: {exc}", "error")
@@ -883,15 +1100,16 @@ def generate_complete_ltcat():
             flash(error, "error")
         return redirect(url_for("gerar"))
     try:
-        empresa = _field("empresa")
-        cnpj = _field("cnpj")
-        data_atual = _field("data_atual")
-        data_final = _field("data_final")
+        company = _company_payload_from_form()
+        empresa = company.get("empresa") or company.get("nome", "")
+        cnpj = company.get("cnpj", "")
+        data_atual = company.get("data_atual", "")
+        data_final = company.get("data_final", "")
         if not empresa:
-            flash("Preencha o nome da empresa para gerar o LTCAT completo.", "error")
+            flash("Selecione ou cadastre uma empresa para gerar o LTCAT completo.", "error")
             return redirect(url_for("gerar"))
         if not cnpj:
-            flash("Preencha o CNPJ da empresa para gerar o LTCAT completo.", "error")
+            flash("Cadastre o CNPJ da empresa para gerar o LTCAT completo.", "error")
             return redirect(url_for("gerar"))
         return _send_generated_docx(
             generate_complete_ltcat_docx,
@@ -902,7 +1120,7 @@ def generate_complete_ltcat():
             cnpj,
             data_atual,
             data_final,
-            _company_extra_from_form(),
+            company,
         )
     except Exception as exc:
         flash(f"Erro ao gerar LTCAT completo: {exc}", "error")
@@ -917,15 +1135,16 @@ def generate_complete_pcmso():
             flash(error, "error")
         return redirect(url_for("gerar"))
     try:
-        empresa = _field("empresa")
-        cnpj = _field("cnpj")
-        data_atual = _field("data_atual")
-        data_final = _field("data_final")
+        company = _company_payload_from_form()
+        empresa = company.get("empresa") or company.get("nome", "")
+        cnpj = company.get("cnpj", "")
+        data_atual = company.get("data_atual", "")
+        data_final = company.get("data_final", "")
         if not empresa:
-            flash("Preencha o nome da empresa para gerar o PCMSO completo.", "error")
+            flash("Selecione ou cadastre uma empresa para gerar o PCMSO completo.", "error")
             return redirect(url_for("gerar"))
         if not cnpj:
-            flash("Preencha o CNPJ da empresa para gerar o PCMSO completo.", "error")
+            flash("Cadastre o CNPJ da empresa para gerar o PCMSO completo.", "error")
             return redirect(url_for("gerar"))
         return _send_generated_docx(
             generate_complete_pcmso_docx,
@@ -936,6 +1155,7 @@ def generate_complete_pcmso():
             cnpj,
             data_atual,
             data_final,
+            company,
         )
     except Exception as exc:
         flash(f"Erro ao gerar PCMSO completo: {exc}", "error")

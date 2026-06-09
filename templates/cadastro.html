@@ -2,41 +2,42 @@
 {% block title %}Cadastrar Riscos{% endblock %}
 
 {% block content %}
-<section class="panel">
-  <div class="panel-title">
-    <div>
-      <h2>Novo risco</h2>
-      <p>Cadastre o risco uma vez para usar nos três modelos de Word.</p>
-    </div>
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Cadastro</p>
+    <h1>Riscos</h1>
+    <p class="muted">Cadastre uma vez e reutilize no PGR, PCMSO e LTCAT.</p>
   </div>
+</div>
+
+<details class="panel collapsible-open" open>
+  <summary class="panel-summary"><span>Novo risco</span><small>Clique para abrir ou recolher o formulário</small></summary>
   <form action="{{ url_for('create_risk') }}" method="post" class="form-card">
     {% set risk = None %}
     {% include "_form.html" %}
-    <div class="actions end">
-      <button class="btn primary" type="submit">Cadastrar risco</button>
-    </div>
+    <div class="actions end"><button class="btn primary" type="submit">Cadastrar risco</button></div>
   </form>
-</section>
+</details>
 
-<section class="panel">
+<section class="panel slim-panel">
   <div class="panel-title split">
     <div>
       <h2>Riscos cadastrados</h2>
-      <p>Edite ou exclua riscos já salvos no sistema.</p>
+      <p>Lista compacta para não ocupar muito espaço mesmo com muitos riscos.</p>
     </div>
-    <input class="search" id="riskSearch" placeholder="Buscar risco cadastrado...">
+    <input class="search" id="riskSearch" placeholder="Buscar risco, tipo ou ação...">
   </div>
 
   {% if risks %}
-    <div class="risk-list" id="riskList">
+    <div class="compact-list" id="riskList">
       {% for item in risks %}
-        <article class="risk-card" data-search="{{ (item.risco ~ ' ' ~ item.acoes ~ ' ' ~ item.tipo_risco ~ ' ' ~ item.grau_severidade ~ ' ' ~ item.grau_possibilidade ~ ' ' ~ item.grau_nivel_risco)|lower }}">
-          <div class="risk-heading">
+        <article class="compact-row risk-row" data-search="{{ (item.risco ~ ' ' ~ item.acoes ~ ' ' ~ item.tipo_risco ~ ' ' ~ item.grau_severidade ~ ' ' ~ item.grau_possibilidade ~ ' ' ~ item.grau_nivel_risco)|lower }}">
+          <div>
             <strong>{{ item.risco }}</strong>
-            <span>{{ item.tipo_risco or 'Sem tipo' }} · {{ item.grau_severidade or 'Sem severidade' }} · {{ item.grau_nivel_risco or 'Sem nível' }}</span>
+            <span>{{ item.tipo_risco or 'Sem tipo' }} · {{ item.grau_nivel_risco or 'Sem nível' }}{% if item.tipo_risco in ['FÍSICO','QUÍMICO','BIOLÓGICO'] %} · LTCAT{% endif %}</span>
           </div>
           <p>{{ item.acoes }}</p>
-          <div class="card-footer">
+          <div class="row-actions">
             <a class="btn small" href="{{ url_for('edit_risk', risk_id=item.id) }}">Editar</a>
             <button class="btn small danger" type="submit" form="delete-{{ item.id }}">Excluir</button>
           </div>
@@ -44,10 +45,7 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="empty">
-      <strong>Nenhum risco cadastrado ainda.</strong>
-      <p>Cadastre o primeiro risco acima para começar a gerar os arquivos Word.</p>
-    </div>
+    <div class="empty"><strong>Nenhum risco cadastrado ainda.</strong><p>Cadastre o primeiro risco acima.</p></div>
   {% endif %}
 
   {% for item in risks %}
