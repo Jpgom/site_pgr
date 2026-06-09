@@ -78,9 +78,9 @@ class Risk(db.Model):
     epis = db.Column(Text, nullable=False)
     epcs = db.Column(Text, nullable=False)
     ltcat_meio_propagacao = db.Column(Text, default="")
-    ltcat_insalubridade = db.Column(db.String(80), default="Não")
-    ltcat_grau_insalubridade = db.Column(db.String(120), default="Não aplicável")
-    ltcat_aposentadoria_especial = db.Column(db.String(80), default="Não")
+    ltcat_insalubridade = db.Column(Text, default="Não")
+    ltcat_grau_insalubridade = db.Column(Text, default="Não aplicável")
+    ltcat_aposentadoria_especial = db.Column(Text, default="Não")
     ltcat_enquadramento_tecnico = db.Column(Text, default="")
     ltcat_parecer_previdenciario = db.Column(Text, default="")
     ltcat_periodicidade_jornada = db.Column(Text, default="Mensal (<= 4 horas < 10% jornada)")
@@ -337,7 +337,7 @@ def _ensure_schema_columns() -> None:
         db.session.execute(text(stmt))
 
     def alter_company_columns_to_text() -> None:
-        # Bancos já criados no Render podem ter campos curtos (VARCHAR(40)).
+        # Bancos já criados no Render podem ter campos curtos (VARCHAR).
         # Como alguns campos recebem descrições completas de CNAE/atividade,
         # ampliamos para TEXT sem apagar nenhum dado.
         if dialect != "postgresql":
@@ -351,11 +351,28 @@ def _ensure_schema_columns() -> None:
             if has_column("companies", column_name):
                 db.session.execute(text(f"ALTER TABLE companies ALTER COLUMN {column_name} TYPE TEXT"))
 
+    def alter_risk_columns_to_text() -> None:
+        # A importação em lote usa textos técnicos longos em vários campos.
+        # Em versões antigas alguns campos foram criados como VARCHAR(80/120),
+        # o que causava erro no PostgreSQL ao importar planilhas completas.
+        if dialect != "postgresql":
+            return
+        text_columns = [
+            "acoes", "indicador", "descricao_agente", "possiveis_lesoes",
+            "fontes_circunstancias", "epis", "epcs", "ltcat_meio_propagacao",
+            "ltcat_insalubridade", "ltcat_grau_insalubridade",
+            "ltcat_aposentadoria_especial", "ltcat_enquadramento_tecnico",
+            "ltcat_parecer_previdenciario", "ltcat_periodicidade_jornada",
+        ]
+        for column_name in text_columns:
+            if has_column("risks", column_name):
+                db.session.execute(text(f"ALTER TABLE risks ALTER COLUMN {column_name} TYPE TEXT"))
+
     add_column("sectors", "group_id VARCHAR(32)")
     add_column("risks", "ltcat_meio_propagacao TEXT")
-    add_column("risks", "ltcat_insalubridade VARCHAR(80)")
-    add_column("risks", "ltcat_grau_insalubridade VARCHAR(120)")
-    add_column("risks", "ltcat_aposentadoria_especial VARCHAR(80)")
+    add_column("risks", "ltcat_insalubridade TEXT")
+    add_column("risks", "ltcat_grau_insalubridade TEXT")
+    add_column("risks", "ltcat_aposentadoria_especial TEXT")
     add_column("risks", "ltcat_enquadramento_tecnico TEXT")
     add_column("risks", "ltcat_parecer_previdenciario TEXT")
     add_column("risks", "ltcat_periodicidade_jornada TEXT")
@@ -369,6 +386,7 @@ def _ensure_schema_columns() -> None:
     ]:
         add_column("companies", col)
     alter_company_columns_to_text()
+    alter_risk_columns_to_text()
     db.session.commit()
 
 
