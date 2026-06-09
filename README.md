@@ -12,7 +12,7 @@ Sistema Flask para cadastro de riscos, setores/cargos, empresas, exames e geraç
 - Cadastro de exames para o PCMSO.
 - Geração de PGR completo.
 - Geração de PCMSO completo.
-- Geração de LTCAT completo.
+- Geração de LTCAT completo com seleção própria dos riscos ambientais por setor.
 - Exportações avulsas: Plano de Ação, Inventário PGR, Riscos/Exames PCMSO, Relação Função x Atividade e Descritivo Setor.
 
 ## Rodar localmente

@@ -28,18 +28,41 @@ attachSearch('sectorGroupSearch', '#sectorGroupList .group-box');
 attachSearch('pgrSectorSearch', '#pgrSectorList .sector-option');
 attachSearch('riskPickerSearch', '.risk-option');
 attachSearch('examPickerSearch', '.exam-option');
+attachSearch('ltcatRiskPickerSearch', '.ltcat-risk-option');
+
+function selectedPgrSectorIds() {
+  return new Set(Array.from(document.querySelectorAll('input[name="pgr_sector_ids"]:checked')).map((box) => box.value));
+}
+
+function syncSectorPickers() {
+  const select = document.getElementById('groupFilter');
+  const group = select ? select.value : '';
+  const selected = selectedPgrSectorIds();
+  document.querySelectorAll('.sector-picker').forEach((el) => {
+    const matchesGroup = !group || el.dataset.group === group;
+    const matchesSector = selected.has(el.dataset.sector);
+    const show = matchesGroup && matchesSector;
+    el.style.display = show ? '' : 'none';
+    if (!show) el.removeAttribute('open');
+  });
+}
 
 function filterGroupSectors() {
   const select = document.getElementById('groupFilter');
   if (!select) return;
   const group = select.value;
-  document.querySelectorAll('.sector-option, .sector-picker').forEach((el) => {
+  document.querySelectorAll('.sector-option').forEach((el) => {
     const show = !group || el.dataset.group === group;
     el.style.display = show ? '' : 'none';
   });
+  syncSectorPickers();
 }
 const groupFilter = document.getElementById('groupFilter');
 if (groupFilter) groupFilter.addEventListener('change', filterGroupSectors);
+document.querySelectorAll('input[name="pgr_sector_ids"]').forEach((box) => {
+  box.addEventListener('change', syncSectorPickers);
+});
+syncSectorPickers();
 
 function cargoRowTemplate() {
   const div = document.createElement('div');
@@ -68,6 +91,9 @@ function togglePgrRisks(checked) {
 }
 function togglePgrExams(checked) {
   document.querySelectorAll('.pgr-exam-check').forEach((box) => { box.checked = checked; });
+}
+function toggleLtcatRisks(checked) {
+  document.querySelectorAll('.ltcat-risk-check').forEach((box) => { box.checked = checked; });
 }
 
 function syncRevisionField() {

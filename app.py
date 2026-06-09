@@ -253,6 +253,8 @@ FORM_OPTIONS = {
     "niveis_risco": list(NIVEL_RISCO_COLORS.keys()),
 }
 
+TIPOS_RISCO_LTCAT = {"FÍSICO", "QUÍMICO", "BIOLÓGICO"}
+
 
 def _read_json_list(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
@@ -1146,6 +1148,7 @@ def _gerar_form_state_from_request() -> dict[str, Any]:
     sector_ids = request.form.getlist("pgr_sector_ids")
     risks_by_sector = {sector_id: request.form.getlist(f"sector_risk_ids_{sector_id}") for sector_id in sector_ids}
     exams_by_sector = {sector_id: request.form.getlist(f"sector_exam_ids_{sector_id}") for sector_id in sector_ids}
+    ltcat_risks_by_sector = {sector_id: request.form.getlist(f"ltcat_risk_ids_{sector_id}") for sector_id in sector_ids}
     return {
         "company_id": _field("company_id"),
         "data_criacao_laudo": _field("data_criacao_laudo"),
@@ -1154,14 +1157,18 @@ def _gerar_form_state_from_request() -> dict[str, Any]:
         "selected_sector_ids": sector_ids,
         "selected_risk_ids_by_sector": risks_by_sector,
         "selected_exam_ids_by_sector": exams_by_sector,
+        "selected_ltcat_risk_ids_by_sector": ltcat_risks_by_sector,
     }
 
 
 def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     today = datetime.now().strftime("%m/%Y")
     next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")
+    risks = _sorted_risks()
+    ltcat_risks = [risk for risk in risks if str(risk.get("tipo_risco", "")).strip().upper() in TIPOS_RISCO_LTCAT]
     return {
-        "risks": _sorted_risks(),
+        "risks": risks,
+        "ltcat_risks": ltcat_risks,
         "sectors": _sorted_sectors(),
         "exams": _sorted_exams(),
         "groups": _sorted_groups(),
@@ -1314,8 +1321,17 @@ def _selected_sector_ltcat_groups() -> tuple[list[dict[str, Any]], list[str]]:
         sector = sectors.get(sector_id)
         if not sector:
             continue
-        risk_ids = request.form.getlist(f"sector_risk_ids_{sector_id}")
+        # A LTCAT agora possui seleção própria. Somente os riscos marcados nesta
+        # seção entram no LTCAT; setores sem riscos marcados geram o bloco de
+        # AUSÊNCIA DE RISCOS. Mantemos fallback para formulários antigos.
+        risk_ids = request.form.getlist(f"ltcat_risk_ids_{sector_id}")
+        if not risk_ids and f"ltcat_risk_ids_{sector_id}" not in request.form:
+            risk_ids = request.form.getlist(f"sector_risk_ids_{sector_id}")
         selected_risks = [risks[risk_id] for risk_id in risk_ids if risk_id in risks]
+        selected_risks = [
+            risk for risk in selected_risks
+            if str(risk.get("tipo_risco", "")).strip().upper() in TIPOS_RISCO_LTCAT
+        ]
         groups.append({"sector": sector, "risks": selected_risks, "exams": []})
 
     return groups, errors
