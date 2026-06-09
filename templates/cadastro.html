@@ -19,6 +19,21 @@
   </form>
 </details>
 
+<section class="panel import-panel">
+  <div class="panel-title split">
+    <div>
+      <h2>Importar riscos por Excel</h2>
+      <p>Baixe o modelo, preencha uma linha por risco e envie para cadastrar vários de uma vez.</p>
+    </div>
+    <a class="btn small" href="{{ url_for('download_risk_import_template') }}">Baixar modelo Excel</a>
+  </div>
+  <form action="{{ url_for('import_risks') }}" method="post" enctype="multipart/form-data" class="inline-import">
+    <input type="file" name="arquivo" accept=".xlsx" required>
+    <button class="btn primary" type="submit">Importar riscos</button>
+  </form>
+  <p class="hint">Duplicidades pelo mesmo nome de risco serão ignoradas. Preencha os campos obrigatórios do modelo.</p>
+</section>
+
 <section class="panel slim-panel">
   <div class="panel-title split">
     <div>

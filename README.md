@@ -5,7 +5,9 @@ Sistema Flask para cadastro de riscos, setores/cargos, empresas, exames e geraç
 ## Funcionalidades
 
 - Cadastro de riscos ocupacionais com dados para PGR, PCMSO, Plano de Ação e LTCAT.
+- Importação de riscos em massa por modelo Excel.
 - Cadastro de setores/cargos organizados por grupos.
+- Importação de setores/cargos em massa por modelo Excel, vinculando os setores ao grupo escolhido.
 - Cadastro completo de empresas para preencher a Identificação da Empresa nos laudos.
 - Cadastro de exames para o PCMSO.
 - Geração de PGR completo.

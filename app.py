@@ -11,6 +11,11 @@ from flask import Flask, flash, redirect, render_template, request, send_file, u
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Text, inspect, text
 
+try:
+    from openpyxl import load_workbook
+except Exception:  # pragma: no cover - usado apenas se a dependência não estiver instalada
+    load_workbook = None
+
 from word_generator import (
     NIVEL_RISCO_COLORS,
     POSSIBILIDADE_COLORS,
@@ -31,6 +36,8 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "data" / "riscos.json"
 SETORES_FILE = BASE_DIR / "data" / "setores.json"
 EXAMES_FILE = BASE_DIR / "data" / "exames.json"
+RISK_IMPORT_TEMPLATE = BASE_DIR / "modelos" / "modelo_importacao_riscos.xlsx"
+SECTOR_IMPORT_TEMPLATE = BASE_DIR / "modelos" / "modelo_importacao_setores.xlsx"
 OUTPUT_DIR = BASE_DIR / "outputs"
 INSTANCE_DIR = BASE_DIR / "instance"
 
@@ -186,23 +193,23 @@ class Company(db.Model):
     __tablename__ = "companies"
 
     id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
-    nome = db.Column(db.String(255), nullable=False)
-    cnpj = db.Column(db.String(40), nullable=False)
-    endereco = db.Column(db.String(255), default="")
-    bairro_cidade = db.Column(db.String(255), default="")
-    cep = db.Column(db.String(40), default="")
-    cnae1 = db.Column(db.String(80), default="")
+    nome = db.Column(Text, nullable=False)
+    cnpj = db.Column(Text, nullable=False)
+    endereco = db.Column(Text, default="")
+    bairro_cidade = db.Column(Text, default="")
+    cep = db.Column(Text, default="")
+    cnae1 = db.Column(Text, default="")
     descricao1 = db.Column(Text, default="")
-    grau1 = db.Column(db.String(40), default="")
-    cnae2 = db.Column(db.String(80), default="")
+    grau1 = db.Column(Text, default="")
+    cnae2 = db.Column(Text, default="")
     descricao2 = db.Column(Text, default="")
-    grau2 = db.Column(db.String(40), default="")
-    funcionarios = db.Column(db.String(40), default="")
-    data_atual = db.Column(db.String(40), default="")
-    data_final = db.Column(db.String(40), default="")
-    email = db.Column(db.String(255), default="")
-    fone = db.Column(db.String(80), default="")
-    data_avaliacao = db.Column(db.String(40), default="")
+    grau2 = db.Column(Text, default="")
+    funcionarios = db.Column(Text, default="")
+    data_atual = db.Column(Text, default="")
+    data_final = db.Column(Text, default="")
+    email = db.Column(Text, default="")
+    fone = db.Column(Text, default="")
+    data_avaliacao = db.Column(Text, default="")
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -329,6 +336,21 @@ def _ensure_schema_columns() -> None:
             stmt = f"ALTER TABLE {table_name} ADD COLUMN {column_sqlite}"
         db.session.execute(text(stmt))
 
+    def alter_company_columns_to_text() -> None:
+        # Bancos já criados no Render podem ter campos curtos (VARCHAR(40)).
+        # Como alguns campos recebem descrições completas de CNAE/atividade,
+        # ampliamos para TEXT sem apagar nenhum dado.
+        if dialect != "postgresql":
+            return
+        text_columns = [
+            "nome", "cnpj", "endereco", "bairro_cidade", "cep",
+            "cnae1", "descricao1", "grau1", "cnae2", "descricao2", "grau2",
+            "funcionarios", "data_atual", "data_final", "email", "fone", "data_avaliacao",
+        ]
+        for column_name in text_columns:
+            if has_column("companies", column_name):
+                db.session.execute(text(f"ALTER TABLE companies ALTER COLUMN {column_name} TYPE TEXT"))
+
     add_column("sectors", "group_id VARCHAR(32)")
     add_column("risks", "ltcat_meio_propagacao TEXT")
     add_column("risks", "ltcat_insalubridade VARCHAR(80)")
@@ -339,13 +361,14 @@ def _ensure_schema_columns() -> None:
     add_column("risks", "ltcat_periodicidade_jornada TEXT")
     # Evolução segura do banco para o cadastro completo de empresas.
     for col in [
-        "nome VARCHAR(255)", "cnpj VARCHAR(40)", "endereco VARCHAR(255)", "bairro_cidade VARCHAR(255)",
-        "cep VARCHAR(40)", "cnae1 VARCHAR(80)", "descricao1 TEXT", "grau1 VARCHAR(40)",
-        "cnae2 VARCHAR(80)", "descricao2 TEXT", "grau2 VARCHAR(40)", "funcionarios VARCHAR(40)",
-        "data_atual VARCHAR(40)", "data_final VARCHAR(40)", "email VARCHAR(255)", "fone VARCHAR(80)",
-        "data_avaliacao VARCHAR(40)",
+        "nome TEXT", "cnpj TEXT", "endereco TEXT", "bairro_cidade TEXT",
+        "cep TEXT", "cnae1 TEXT", "descricao1 TEXT", "grau1 TEXT",
+        "cnae2 TEXT", "descricao2 TEXT", "grau2 TEXT", "funcionarios TEXT",
+        "data_atual TEXT", "data_final TEXT", "email TEXT", "fone TEXT",
+        "data_avaliacao TEXT",
     ]:
         add_column("companies", col)
+    alter_company_columns_to_text()
     db.session.commit()
 
 
@@ -509,12 +532,24 @@ def _company_from_dict(data: dict[str, Any], company: Company | None = None) -> 
     return company
 
 
+def _is_numeric_text(value: str) -> bool:
+    value = str(value or "").strip()
+    return value == "" or value.isdigit()
+
+
 def _validate_company(company: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if not company.get("nome"):
         errors.append("Preencha o nome da empresa.")
     if not company.get("cnpj"):
         errors.append("Preencha o CNPJ da empresa.")
+
+    # O grau de risco é sempre número. Essa validação evita o erro técnico do banco
+    # quando a descrição da atividade é colada no campo de grau por engano.
+    if not _is_numeric_text(company.get("grau1", "")):
+        errors.append("O Grau de risco principal deve conter somente número, como 1, 2, 3 ou 4. Verifique se a descrição da atividade foi colocada no campo correto.")
+    if not _is_numeric_text(company.get("grau2", "")):
+        errors.append("O Grau de risco secundário deve conter somente número, como 1, 2, 3 ou 4. Verifique se a descrição da atividade secundária foi colocada no campo correto.")
     return errors
 
 def _exam_from_dict(data: dict[str, Any], exam: Exam | None = None) -> Exam:
@@ -608,6 +643,75 @@ def _sorted_groups() -> list[dict[str, Any]]:
 
 def _sorted_companies() -> list[dict[str, Any]]:
     return [company.to_dict() for company in Company.query.order_by(Company.nome.asc()).all()]
+
+
+def _normalize_import_header(value: Any) -> str:
+    import re
+    import unicodedata
+
+    text_value = str(value or "").strip().lower()
+    text_value = unicodedata.normalize("NFKD", text_value)
+    text_value = "".join(ch for ch in text_value if not unicodedata.combining(ch))
+    text_value = re.sub(r"[^a-z0-9]+", "_", text_value).strip("_")
+    return text_value
+
+
+def _xlsx_rows_from_upload(file_storage) -> tuple[list[dict[str, str]], list[str]]:
+    """Lê a primeira aba da planilha enviada e retorna linhas por cabeçalho."""
+    errors: list[str] = []
+    if load_workbook is None:
+        return [], ["A biblioteca openpyxl não está instalada. Rode: pip install -r requirements.txt"]
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        return [], ["Selecione uma planilha Excel para importar."]
+    if not file_storage.filename.lower().endswith(".xlsx"):
+        return [], ["Envie uma planilha no formato .xlsx."]
+
+    try:
+        wb = load_workbook(file_storage.stream, data_only=True)
+    except Exception as exc:
+        return [], [f"Não foi possível ler a planilha. Verifique se o arquivo é .xlsx válido. Detalhe: {exc}"]
+
+    ws = wb.active
+    header_values = [cell.value for cell in ws[1]]
+    headers = [_normalize_import_header(value) for value in header_values]
+    if not any(headers):
+        return [], ["A primeira linha da planilha precisa conter os cabeçalhos."]
+
+    rows: list[dict[str, str]] = []
+    for row_index, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not any(value not in (None, "") for value in row):
+            continue
+        item = {headers[i]: str(row[i] if row[i] is not None else "").strip() for i in range(min(len(headers), len(row))) if headers[i]}
+        item["__linha"] = str(row_index)
+        rows.append(item)
+    return rows, errors
+
+
+def _row_get(row: dict[str, str], *aliases: str) -> str:
+    for alias in aliases:
+        value = row.get(_normalize_import_header(alias), "")
+        if value:
+            return value.strip()
+    return ""
+
+
+def _truthy_import_value(value: str) -> str:
+    """Normaliza marcações simples de planilha para campos textuais."""
+    value = str(value or "").strip()
+    if value.lower() in {"sim", "s", "x", "1", "true", "verdadeiro"}:
+        return "X"
+    return value
+
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen = set()
+    out: list[str] = []
+    for item in items:
+        key = item.strip().lower()
+        if item and key not in seen:
+            seen.add(key)
+            out.append(item)
+    return out
 
 
 def _grouped_sectors() -> list[dict[str, Any]]:
@@ -716,6 +820,171 @@ def index():
 @app.route("/cadastro")
 def cadastro():
     return render_template("cadastro.html", risks=_sorted_risks(), options=FORM_OPTIONS)
+
+
+@app.get("/modelo-importacao-riscos")
+def download_risk_import_template():
+    return send_file(
+        RISK_IMPORT_TEMPLATE,
+        as_attachment=True,
+        download_name="modelo_importacao_riscos.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.post("/importar-riscos")
+def import_risks():
+    rows, read_errors = _xlsx_rows_from_upload(request.files.get("arquivo"))
+    if read_errors:
+        for error in read_errors:
+            flash(error, "error")
+        return redirect(url_for("cadastro"))
+
+    existing_names = {risk.risco.strip().lower() for risk in Risk.query.all()}
+    imported = 0
+    skipped = 0
+    errors: list[str] = []
+
+    for row in rows:
+        line = row.get("__linha", "?")
+        risk_data = {
+            "id": uuid.uuid4().hex,
+            "risco": _row_get(row, "risco", "perigo/fator de risco", "perigo", "nome do risco"),
+            "acoes": _row_get(row, "ações preventiva / corretiva", "acoes preventiva corretiva", "ações", "acoes"),
+            "indicador": _row_get(row, "indicador de efetividade", "indicador"),
+            "tipo_risco": _row_get(row, "tipo de risco", "tipo"),
+            "descricao_agente": _row_get(row, "descrição do agente", "descricao do agente"),
+            "possiveis_lesoes": _row_get(row, "possíveis lesões ou agravos à saúde", "possiveis lesoes ou agravos a saude", "lesões", "lesoes"),
+            "fontes_circunstancias": _row_get(row, "fontes ou circunstâncias", "fontes ou circunstancias") or "Durante o processo de trabalho.",
+            "epis": _row_get(row, "epi", "epis"),
+            "epcs": _row_get(row, "epc", "epcs"),
+            "grau_severidade": _row_get(row, "grau de severidade", "severidade"),
+            "grau_possibilidade": _row_get(row, "grau de possibilidade", "possibilidade", "probabilidade"),
+            "grau_nivel_risco": _row_get(row, "grau de nível de risco", "grau de nivel de risco", "nível de risco", "nivel de risco"),
+            "ltcat_meio_propagacao": _row_get(row, "ltcat meio de propagação / via de exposição", "meio de propagação", "via de exposição", "ltcat meio propagacao"),
+            "ltcat_periodicidade_jornada": _row_get(row, "ltcat periodicidade / jornada de exposição", "periodicidade / jornada de exposição", "jornada de exposição"),
+            "ltcat_insalubridade": _row_get(row, "ltcat insalubridade", "insalubridade") or "Não",
+            "ltcat_grau_insalubridade": _row_get(row, "ltcat grau de insalubridade", "grau de insalubridade") or "Não aplicável",
+            "ltcat_aposentadoria_especial": _row_get(row, "ltcat aposentadoria especial", "aposentadoria especial") or "Não",
+            "ltcat_enquadramento_tecnico": _row_get(row, "ltcat enquadramento técnico", "enquadramento técnico", "enquadramento tecnico"),
+            "ltcat_parecer_previdenciario": _row_get(row, "ltcat parecer previdenciário", "parecer previdenciário", "parecer previdenciario"),
+        }
+
+        if risk_data["risco"].strip().lower() in existing_names:
+            skipped += 1
+            continue
+
+        validation_errors = _validate_risk(risk_data)
+        if validation_errors:
+            skipped += 1
+            errors.extend([f"Linha {line}: {error}" for error in validation_errors])
+            continue
+
+        db.session.add(_risk_from_dict(risk_data))
+        existing_names.add(risk_data["risco"].strip().lower())
+        imported += 1
+
+    db.session.commit()
+    if imported:
+        flash(f"{imported} risco(s) importado(s) com sucesso.", "success")
+    if skipped:
+        flash(f"{skipped} linha(s) não foram importadas por erro ou duplicidade.", "error")
+    for error in errors[:10]:
+        flash(error, "error")
+    if len(errors) > 10:
+        flash(f"Há mais {len(errors) - 10} erro(s) não exibidos. Corrija a planilha e importe novamente.", "error")
+    return redirect(url_for("cadastro"))
+
+
+@app.get("/modelo-importacao-setores")
+def download_sector_import_template():
+    return send_file(
+        SECTOR_IMPORT_TEMPLATE,
+        as_attachment=True,
+        download_name="modelo_importacao_setores.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.post("/importar-setores")
+def import_sectors():
+    group_id = _field("grupo_id_importacao")
+    group = db.session.get(SectorGroup, group_id) if group_id else None
+    if not group:
+        flash("Selecione o grupo onde os setores serão cadastrados antes de importar a planilha.", "error")
+        return redirect(url_for("setores"))
+
+    rows, read_errors = _xlsx_rows_from_upload(request.files.get("arquivo"))
+    if read_errors:
+        for error in read_errors:
+            flash(error, "error")
+        return redirect(url_for("setores"))
+
+    grouped: dict[str, list[dict[str, str]]] = {}
+    errors: list[str] = []
+    for row in rows:
+        line = row.get("__linha", "?")
+        setor = _row_get(row, "setor", "nome do setor")
+        cargo = _row_get(row, "cargo", "função", "funcao")
+        cbo = _row_get(row, "cbo")
+        n_func = _row_get(row, "número de funcionários", "numero de funcionarios", "nº funcionários", "n_func", "funcionários")
+        descricao = _row_get(row, "descrição da atividade", "descricao da atividade", "atividade")
+        if not setor:
+            errors.append(f"Linha {line}: preencha o Setor.")
+            continue
+        if not cargo:
+            errors.append(f"Linha {line}: preencha o Cargo.")
+            continue
+        if not cbo:
+            errors.append(f"Linha {line}: preencha o CBO.")
+            continue
+        if not n_func:
+            errors.append(f"Linha {line}: preencha o número de funcionários.")
+            continue
+        if not descricao:
+            errors.append(f"Linha {line}: preencha a descrição da atividade.")
+            continue
+        grouped.setdefault(setor.strip(), []).append({
+            "id": uuid.uuid4().hex,
+            "cargo": cargo.strip(),
+            "cbo": cbo.strip(),
+            "n_func": n_func.strip(),
+            "descricao": descricao.strip(),
+        })
+
+    imported_sectors = 0
+    imported_cargos = 0
+    for setor_nome, cargos in grouped.items():
+        sector = Sector.query.filter(
+            db.func.lower(Sector.setor) == setor_nome.lower(),
+            Sector.group_id == group.id,
+        ).first()
+        if not sector:
+            sector = Sector(id=uuid.uuid4().hex, setor=setor_nome, group_id=group.id, cargos=[])
+            db.session.add(sector)
+            imported_sectors += 1
+
+        existing_cargos = list(sector.cargos) if isinstance(sector.cargos, list) else []
+        existing_keys = {(str(c.get("cargo", "")).strip().lower(), str(c.get("cbo", "")).strip().lower()) for c in existing_cargos}
+        for cargo in cargos:
+            key = (cargo["cargo"].strip().lower(), cargo["cbo"].strip().lower())
+            if key not in existing_keys:
+                existing_cargos.append(cargo)
+                existing_keys.add(key)
+                imported_cargos += 1
+        sector.cargos = existing_cargos
+        sector.updated_at = datetime.utcnow()
+
+    db.session.commit()
+    if imported_sectors or imported_cargos:
+        flash(f"Importação concluída: {imported_sectors} setor(es) novo(s) e {imported_cargos} cargo(s) cadastrado(s) no grupo {group.nome}.", "success")
+    if errors:
+        flash(f"{len(errors)} linha(s) não foram importadas por erro.", "error")
+        for error in errors[:10]:
+            flash(error, "error")
+        if len(errors) > 10:
+            flash(f"Há mais {len(errors) - 10} erro(s) não exibidos.", "error")
+    return redirect(url_for("setores"))
 
 
 @app.route("/setores")

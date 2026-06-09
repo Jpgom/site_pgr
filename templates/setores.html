@@ -30,6 +30,27 @@
   </div>
 </section>
 
+<section class="panel import-panel">
+  <div class="panel-title split">
+    <div>
+      <h2>Importar setores por Excel</h2>
+      <p>Selecione primeiro o grupo onde os setores serão cadastrados, baixe o modelo e importe a planilha preenchida.</p>
+    </div>
+    <a class="btn small" href="{{ url_for('download_sector_import_template') }}">Baixar modelo Excel</a>
+  </div>
+  <form action="{{ url_for('import_sectors') }}" method="post" enctype="multipart/form-data" class="inline-import">
+    <select name="grupo_id_importacao" required>
+      <option value="">Selecione o grupo de destino</option>
+      {% for group in groups %}
+        <option value="{{ group.id }}">{{ group.nome }}</option>
+      {% endfor %}
+    </select>
+    <input type="file" name="arquivo" accept=".xlsx" required>
+    <button class="btn primary" type="submit">Importar setores</button>
+  </form>
+  <p class="hint">Cada linha representa um cargo. Para mais de um cargo no mesmo setor, repita o nome do setor em novas linhas.</p>
+</section>
+
 <section class="panel slim-panel">
   <div class="panel-title split">
     <div>

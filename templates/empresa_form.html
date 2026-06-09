@@ -22,10 +22,10 @@
     <label><span>Bairro / Cidade</span><input name="bairro_cidade" value="{{ company.bairro_cidade or '' }}"></label>
     <label><span>CEP</span><input name="cep" value="{{ company.cep or '' }}"></label>
     <label><span>CNAE principal</span><input name="cnae1" value="{{ company.cnae1 or company.cnae or '' }}"></label>
-    <label><span>Grau de risco</span><input name="grau1" value="{{ company.grau1 or company.grau_risco or '' }}"></label>
+    <label><span>Grau de risco</span><input name="grau1" inputmode="numeric" pattern="[0-9]*" value="{{ company.grau1 or company.grau_risco or '' }}" placeholder="Ex.: 1, 2, 3 ou 4"><small>Somente número.</small></label>
     <label class="span-2"><span>Descrição da atividade principal</span><input name="descricao1" value="{{ company.descricao1 or company.descricao_atividade or '' }}"></label>
     <label><span>CNAE secundário</span><input name="cnae2" value="{{ company.cnae2 or company.cnae_secundario or '' }}"></label>
-    <label><span>Grau de risco secundário</span><input name="grau2" value="{{ company.grau2 or company.grau_risco_secundario or '' }}"></label>
+    <label><span>Grau de risco secundário</span><input name="grau2" inputmode="numeric" pattern="[0-9]*" value="{{ company.grau2 or company.grau_risco_secundario or '' }}" placeholder="Ex.: 1, 2, 3 ou 4"><small>Somente número.</small></label>
     <label class="span-2"><span>Descrição da atividade secundária</span><input name="descricao2" value="{{ company.descricao2 or company.descricao_atividade_secundaria or '' }}"></label>
     <label><span>E-mail</span><input name="email" value="{{ company.email or '' }}"></label>
     <label><span>Fone</span><input name="fone" value="{{ company.fone or '' }}"></label>
