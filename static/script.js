@@ -23,6 +23,8 @@ function attachSearch(inputId, selector) {
 }
 
 attachSearch('riskSearch', '#riskList .compact-row');
+attachSearch('riskGroupSearch', '#riskGroupList .risk-group-row');
+attachSearch('riskGroupFormSearch', '#riskGroupFormList .risk-group-risk-option');
 attachSearch('companySearch', '#companyList .compact-row');
 attachSearch('sectorGroupSearch', '#sectorGroupList .group-box');
 attachSearch('pgrSectorSearch', '#pgrSectorList .sector-option');
@@ -147,6 +149,54 @@ function riskLabelOriginalIndex(label) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function riskIdsFromGroupBox(groupBox) {
+  return (groupBox.dataset.riskIds || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function riskInputInSector(sectorId, riskId) {
+  const list = document.querySelector(`[data-risk-list="${sectorId}"]`);
+  if (!list) return null;
+  return Array.from(list.querySelectorAll('.pgr-risk-check')).find((box) => box.value === riskId) || null;
+}
+
+function applySectorRiskGroup(groupBox) {
+  const sectorId = groupBox.dataset.sector;
+  const checked = groupBox.checked;
+  riskIdsFromGroupBox(groupBox).forEach((riskId) => {
+    const input = riskInputInSector(sectorId, riskId);
+    if (input) input.checked = checked;
+  });
+}
+
+function applyCheckedRiskGroupsOnLoad() {
+  document.querySelectorAll('.sector-risk-group-check:checked').forEach((groupBox) => {
+    applySectorRiskGroup(groupBox);
+  });
+}
+
+function syncSectorRiskGroupStates() {
+  document.querySelectorAll('.sector-risk-group-check').forEach((groupBox) => {
+    const sectorId = groupBox.dataset.sector;
+    const ids = riskIdsFromGroupBox(groupBox);
+    if (!sectorId || ids.length === 0) {
+      groupBox.checked = false;
+      groupBox.indeterminate = false;
+      return;
+    }
+    const states = ids.map((riskId) => {
+      const input = riskInputInSector(sectorId, riskId);
+      return !!(input && input.checked);
+    });
+    const allSelected = states.length > 0 && states.every(Boolean);
+    const someSelected = states.some(Boolean);
+    groupBox.checked = allSelected;
+    groupBox.indeterminate = someSelected && !allSelected;
+  });
+}
+
 function updateRiskSelectionLists() {
   let totalSelected = 0;
   document.querySelectorAll('.risk-list-mode').forEach((list) => {
@@ -184,10 +234,20 @@ function updateRiskSelectionLists() {
   if (total) {
     total.textContent = `${totalSelected} ${totalSelected === 1 ? 'risco selecionado' : 'riscos selecionados'}`;
   }
+
+  syncSectorRiskGroupStates();
 }
+
+applyCheckedRiskGroupsOnLoad();
 
 document.querySelectorAll('.pgr-risk-check').forEach((box) => {
   box.addEventListener('change', updateRiskSelectionLists);
+});
+document.querySelectorAll('.sector-risk-group-check').forEach((box) => {
+  box.addEventListener('change', () => {
+    applySectorRiskGroup(box);
+    updateRiskSelectionLists();
+  });
 });
 updateRiskSelectionLists();
 

@@ -64,6 +64,13 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 db = SQLAlchemy(app)
 
 
+risk_group_items = db.Table(
+    "risk_group_items",
+    db.Column("risk_group_id", db.String(32), db.ForeignKey("risk_groups.id"), primary_key=True),
+    db.Column("risk_id", db.String(32), db.ForeignKey("risks.id"), primary_key=True),
+)
+
+
 class Risk(db.Model):
     __tablename__ = "risks"
 
@@ -117,6 +124,31 @@ class Risk(db.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
         }
+
+
+class RiskGroup(db.Model):
+    __tablename__ = "risk_groups"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    nome = db.Column(db.String(255), nullable=False, unique=True)
+    descricao = db.Column(Text, default="")
+    risks = db.relationship("Risk", secondary=risk_group_items, lazy="select")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        ordered_risks = sorted(self.risks or [], key=lambda item: (item.risco or "").lower())
+        return {
+            "id": self.id,
+            "nome": self.nome,
+            "descricao": self.descricao or "",
+            "risk_ids": [risk.id for risk in ordered_risks],
+            "risk_names": [risk.risco for risk in ordered_risks],
+            "risk_count": len(ordered_risks),
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+        }
+
 
 
 class SectorGroup(db.Model):
@@ -647,6 +679,10 @@ def _sorted_risks() -> list[dict[str, Any]]:
     return [risk.to_dict() for risk in Risk.query.order_by(Risk.risco.asc()).all()]
 
 
+def _sorted_risk_groups() -> list[dict[str, Any]]:
+    return [group.to_dict() for group in RiskGroup.query.order_by(RiskGroup.nome.asc()).all()]
+
+
 def _sorted_sectors() -> list[dict[str, Any]]:
     return [sector.to_dict() for sector in Sector.query.order_by(Sector.setor.asc()).all()]
 
@@ -803,6 +839,16 @@ def _selected_sectors() -> list[dict[str, Any]]:
     return [sector.to_dict() for sector in sectors]
 
 
+def _risk_ids_from_group_ids(group_ids: list[str]) -> list[str]:
+    if not group_ids:
+        return []
+    groups = RiskGroup.query.filter(RiskGroup.id.in_(group_ids)).all()
+    risk_ids: list[str] = []
+    for group in groups:
+        risk_ids.extend([risk.id for risk in group.risks or []])
+    return _dedupe_preserve_order(risk_ids)
+
+
 def _selected_sector_risk_groups() -> tuple[list[dict[str, Any]], list[str]]:
     selected_sector_ids = request.form.getlist("pgr_sector_ids")
     risks = {risk.id: risk.to_dict() for risk in Risk.query.all()}
@@ -821,6 +867,8 @@ def _selected_sector_risk_groups() -> tuple[list[dict[str, Any]], list[str]]:
         if not sector:
             continue
         risk_ids = request.form.getlist(f"sector_risk_ids_{sector_id}")
+        group_ids = request.form.getlist(f"sector_risk_group_ids_{sector_id}")
+        risk_ids = _dedupe_preserve_order(risk_ids + _risk_ids_from_group_ids(group_ids))
         exam_ids = request.form.getlist(f"sector_exam_ids_{sector_id}")
         selected_risks = [risks[risk_id] for risk_id in risk_ids if risk_id in risks]
         selected_exams = [exams[exam_id] for exam_id in exam_ids if exam_id in exams]
@@ -839,7 +887,7 @@ def index():
 
 @app.route("/cadastro")
 def cadastro():
-    return render_template("cadastro.html", risks=_sorted_risks(), options=FORM_OPTIONS)
+    return render_template("cadastro.html", risks=_sorted_risks(), risk_groups=_sorted_risk_groups(), options=FORM_OPTIONS)
 
 
 @app.get("/modelo-importacao-riscos")
@@ -1147,6 +1195,7 @@ def delete_exam(exam_id: str):
 def _gerar_form_state_from_request() -> dict[str, Any]:
     sector_ids = request.form.getlist("pgr_sector_ids")
     risks_by_sector = {sector_id: request.form.getlist(f"sector_risk_ids_{sector_id}") for sector_id in sector_ids}
+    risk_groups_by_sector = {sector_id: request.form.getlist(f"sector_risk_group_ids_{sector_id}") for sector_id in sector_ids}
     exams_by_sector = {sector_id: request.form.getlist(f"sector_exam_ids_{sector_id}") for sector_id in sector_ids}
     return {
         "company_id": _field("company_id"),
@@ -1155,6 +1204,7 @@ def _gerar_form_state_from_request() -> dict[str, Any]:
         "data_da_revisao": _field("data_da_revisao"),
         "selected_sector_ids": sector_ids,
         "selected_risk_ids_by_sector": risks_by_sector,
+        "selected_risk_group_ids_by_sector": risk_groups_by_sector,
         "selected_exam_ids_by_sector": exams_by_sector,
     }
 
@@ -1167,6 +1217,7 @@ def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "risks": risks,
         "ltcat_risks": ltcat_risks,
+        "risk_groups": _sorted_risk_groups(),
         "sectors": _sorted_sectors(),
         "exams": _sorted_exams(),
         "groups": _sorted_groups(),
@@ -1200,6 +1251,90 @@ def _validate_complete_report_fields(company: dict[str, str], label: str) -> lis
 @app.route("/gerar")
 def gerar():
     return render_template("gerar.html", **_gerar_context())
+
+
+@app.route("/grupos-riscos")
+def risk_groups():
+    return render_template("risk_groups.html", risk_groups=_sorted_risk_groups(), risks=_sorted_risks())
+
+
+def _risk_group_form_data(existing_id: str | None = None) -> dict[str, Any]:
+    return {
+        "id": existing_id or uuid.uuid4().hex,
+        "nome": _field("nome"),
+        "descricao": _field("descricao"),
+        "risk_ids": request.form.getlist("risk_ids"),
+    }
+
+
+def _validate_risk_group(data: dict[str, Any], existing_id: str | None = None) -> list[str]:
+    errors: list[str] = []
+    if not data.get("nome"):
+        errors.append("Preencha o nome do grupo de riscos.")
+    if not data.get("risk_ids"):
+        errors.append("Selecione pelo menos um risco para o grupo.")
+    if data.get("nome"):
+        query = RiskGroup.query.filter(db.func.lower(RiskGroup.nome) == data["nome"].strip().lower())
+        if existing_id:
+            query = query.filter(RiskGroup.id != existing_id)
+        if query.first():
+            errors.append("Já existe um grupo de riscos com esse nome.")
+    return errors
+
+
+def _apply_risk_group_data(model: RiskGroup, data: dict[str, Any]) -> RiskGroup:
+    model.nome = data["nome"].strip()
+    model.descricao = data.get("descricao", "").strip()
+    risk_ids = _dedupe_preserve_order(data.get("risk_ids", []))
+    model.risks = Risk.query.filter(Risk.id.in_(risk_ids)).all() if risk_ids else []
+    model.updated_at = datetime.utcnow()
+    return model
+
+
+@app.post("/grupo-risco/novo")
+def create_risk_group():
+    data = _risk_group_form_data()
+    errors = _validate_risk_group(data)
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return redirect(url_for("risk_groups"))
+    model = RiskGroup(id=data["id"])
+    _apply_risk_group_data(model, data)
+    db.session.add(model)
+    db.session.commit()
+    flash("Grupo de riscos cadastrado com sucesso.", "success")
+    return redirect(url_for("risk_groups"))
+
+
+@app.route("/grupo-risco/<group_id>/editar", methods=["GET", "POST"])
+def edit_risk_group(group_id: str):
+    model = db.session.get(RiskGroup, group_id)
+    if not model:
+        flash("Grupo de riscos não encontrado.", "error")
+        return redirect(url_for("risk_groups"))
+    if request.method == "POST":
+        data = _risk_group_form_data(existing_id=group_id)
+        errors = _validate_risk_group(data, existing_id=group_id)
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("risk_group_form.html", group={**model.to_dict(), **data}, risks=_sorted_risks(), title="Editar grupo de riscos")
+        _apply_risk_group_data(model, data)
+        db.session.commit()
+        flash("Grupo de riscos atualizado com sucesso.", "success")
+        return redirect(url_for("risk_groups"))
+    return render_template("risk_group_form.html", group=model.to_dict(), risks=_sorted_risks(), title="Editar grupo de riscos")
+
+
+@app.post("/grupo-risco/<group_id>/excluir")
+def delete_risk_group(group_id: str):
+    model = db.session.get(RiskGroup, group_id)
+    if model:
+        db.session.delete(model)
+        db.session.commit()
+        flash("Grupo de riscos excluído.", "success")
+    return redirect(url_for("risk_groups"))
 
 
 @app.post("/api/risco/novo")
@@ -1262,6 +1397,9 @@ def edit_risk(risk_id: str):
 def delete_risk(risk_id: str):
     risk_model = db.session.get(Risk, risk_id)
     if risk_model:
+        for group in RiskGroup.query.all():
+            if risk_model in (group.risks or []):
+                group.risks.remove(risk_model)
         db.session.delete(risk_model)
         db.session.commit()
         flash("Risco excluído.", "success")
@@ -1344,6 +1482,8 @@ def _selected_sector_ltcat_groups() -> tuple[list[dict[str, Any]], list[str]]:
         # Tipos não ambientais são ignorados, e setor sem risco ambiental
         # gera o bloco de AUSÊNCIA DE RISCOS.
         risk_ids = request.form.getlist(f"sector_risk_ids_{sector_id}")
+        group_ids = request.form.getlist(f"sector_risk_group_ids_{sector_id}")
+        risk_ids = _dedupe_preserve_order(risk_ids + _risk_ids_from_group_ids(group_ids))
         selected_risks = [risks[risk_id] for risk_id in risk_ids if risk_id in risks]
         selected_risks = [
             risk for risk in selected_risks

@@ -6,6 +6,7 @@
 {% set selected_sector_ids = fs.get('selected_sector_ids', []) %}
 {% set selected_risk_ids_by_sector = fs.get('selected_risk_ids_by_sector', {}) %}
 {% set selected_exam_ids_by_sector = fs.get('selected_exam_ids_by_sector', {}) %}
+{% set selected_risk_group_ids_by_sector = fs.get('selected_risk_group_ids_by_sector', {}) %}
 <div class="page-head">
   <div>
     <p class="eyebrow">Geração</p>
@@ -120,6 +121,23 @@
                 <span class="muted small-note">Selecionados ficam sempre no topo da lista.</span>
                 <span class="pill soft-pill" data-risk-count-badge>0 selecionados</span>
               </div>
+              {% if risk_groups %}
+                <div class="risk-group-picker">
+                  <div class="risk-group-picker-head">
+                    <strong>Grupos de riscos</strong>
+                    <small>Marque um grupo para aplicar seus riscos neste setor. Depois você ainda pode adicionar/remover riscos isolados.</small>
+                  </div>
+                  <div class="risk-group-chip-list">
+                    {% for group in risk_groups %}
+                      <label class="risk-group-chip" title="{{ group.risk_names|join(', ') }}">
+                        <input class="sector-risk-group-check" type="checkbox" name="sector_risk_group_ids_{{ sector.id }}" value="{{ group.id }}" data-sector="{{ sector.id }}" data-risk-ids="{{ group.risk_ids|join(',') }}" {% if group.id in selected_risk_group_ids_by_sector.get(sector.id, []) %}checked{% endif %}>
+                        <span>{{ group.nome }}</span>
+                        <em>{{ group.risk_count }} riscos</em>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endif %}
               <div class="picker-list risk-list-mode" data-risk-list="{{ sector.id }}">
                 {% for risk in risks %}
                   <label class="tiny-check risk-option risk-list-row {% if risk.id in selected_risk_ids_by_sector.get(sector.id, []) %}is-selected{% endif %}" data-index="{{ loop.index0 }}" data-search="{{ (risk.risco ~ ' ' ~ risk.tipo_risco ~ ' ' ~ risk.grau_nivel_risco)|lower }}">

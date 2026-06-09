@@ -60,3 +60,12 @@ O banco existente é preservado. As novas tabelas/colunas são criadas automatic
 - Cadastro rápido de risco dentro da tela **Gerar laudos**, sem recarregar a página.
 - O novo risco é salvo via rota `/api/risco/novo` e aparece imediatamente nas listas de riscos por setor.
 - Opção para marcar automaticamente o novo risco nos setores já selecionados.
+
+## V21 - Grupos de riscos
+
+- Nova aba **Grupos de riscos**.
+- Permite criar pacotes de riscos, por exemplo: LIMPEZA, MANUTENÇÃO, ADMINISTRATIVO.
+- Na tela **Gerar laudos**, cada setor agora permite aplicar um ou mais grupos de riscos.
+- Ao marcar um grupo, todos os riscos daquele grupo são selecionados automaticamente para o setor.
+- Mesmo usando um grupo, ainda é possível marcar riscos isolados ou desmarcar riscos específicos.
+- A LTCAT continua automática: usa apenas os riscos ambientais selecionados no setor, ou seja, FÍSICO, QUÍMICO e BIOLÓGICO.

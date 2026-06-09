@@ -43,3 +43,19 @@ body.modal-open{overflow:hidden}
 .quick-auto-select{margin-right:auto;display:flex;align-items:center;gap:8px;font-weight:750;color:#334155}
 .quick-auto-select input{width:auto}.quick-auto-select span{margin:0;font-size:13px;color:#334155}
 @media(max-width:860px){.modal-backdrop{padding:10px;align-items:flex-start}.modal-card{max-height:96vh;padding:16px;border-radius:18px}.modal-head{flex-direction:column}.modal-actions{align-items:stretch;flex-direction:column}.quick-auto-select{margin-right:0}}
+
+/* V21 - grupos de riscos */
+.risk-group-form{display:grid;gap:14px}
+.risk-group-risk-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:7px;max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:14px;background:#fbfdff;padding:10px}
+.risk-group-risk-option span{font-weight:750;color:#334155;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk-group-risk-option em{white-space:nowrap}
+.risk-group-row{grid-template-columns:minmax(0,1fr) auto}
+.risk-group-row p{max-width:100%;-webkit-line-clamp:2}
+.risk-group-picker{border-top:1px solid var(--line);background:#f8fafc;padding:10px 11px;display:grid;gap:8px}
+.risk-group-picker-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.risk-group-picker-head strong{font-size:13px;color:#334155}
+.risk-group-picker-head small{font-size:12px;color:var(--muted);font-weight:500;text-align:right}
+.risk-group-chip-list{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.risk-group-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #dbe3ee;background:#fff;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:850;color:#334155;cursor:pointer;max-width:100%}
+.risk-group-chip input{width:auto;margin:0}.risk-group-chip span{margin:0;color:#334155;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.risk-group-chip em{font-style:normal;color:#64748b;font-size:11px;white-space:nowrap}.risk-group-chip:has(input:checked){border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.risk-group-chip:has(input:checked) span{color:#1d4ed8}.risk-group-chip:has(input:indeterminate){border-color:#fde68a;background:#fffbeb}
+@media(max-width:860px){.risk-group-risk-list{grid-template-columns:1fr}.risk-group-picker-head{align-items:flex-start;flex-direction:column}.risk-group-picker-head small{text-align:left}.risk-group-chip-list{display:grid;grid-template-columns:1fr}.risk-group-chip{justify-content:flex-start}}
