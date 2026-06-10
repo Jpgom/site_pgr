@@ -62,7 +62,7 @@
             <select name="imported_template_id" id="importedTemplateSelect">
               <option value="">Nenhum modelo importado selecionado</option>
               {% for tpl in imported_templates %}
-                <option value="{{ tpl.id }}">{{ tpl.nome }} · {{ tpl.sector_count }} setor(es) · {{ tpl.risk_count }} risco(s) · {{ tpl.exam_count }} exame(s)</option>
+                <option value="{{ tpl.id }}">{{ tpl.nome }} · {{ tpl.sector_count }} setor(es) · {{ tpl.risk_count }} risco(s) · {{ tpl.linked_risk_count }} vínculo(s) · {{ tpl.exam_count }} exame(s)</option>
               {% endfor %}
             </select>
           </label>

@@ -370,6 +370,7 @@ class ImportedLaudoTemplate(db.Model):
             "source_cnpj": self.source_cnpj or "",
             "sector_count": len(state.get("setores_cargos") or state.get("setores") or []),
             "risk_count": len(state.get("riscos_detalhados") or state.get("riscos") or []),
+            "linked_risk_count": sum(len(v) for v in (state.get("sector_risks") or {}).values() if isinstance(v, list)),
             "exam_count": len(state.get("exames") or []),
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
@@ -1053,60 +1054,151 @@ def _extract_sectors_from_docx_tables(doc) -> list[dict[str, Any]]:
 
 
 def _extract_risks_from_docx_tables(doc) -> list[dict[str, str]]:
-    risks: list[dict[str, str]] = []
-    for table in doc.tables:
-        if len(table.rows) < 8 or len(table.columns) < 4:
+    """Extrai riscos técnicos do inventário do PGR/PCMSO/LTCAT antigo.
+
+    O formato dos laudos antigos usa tabelas do Word com células mescladas,
+    então a mesma informação aparece repetida em várias colunas. A extração
+    abaixo sempre procura o primeiro valor útil depois do rótulo da linha.
+    """
+    all_by_sector = _extract_sector_risks_from_docx_tables(doc)
+    flattened: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for sector_risks in all_by_sector.values():
+        for risk in sector_risks:
+            name = re.sub(r"\s+", " ", risk.get("risco", "")).strip()
+            if not name or len(name) < 4 or len(name) > 220:
+                continue
+            key = _simple_norm(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned = dict(risk)
+            cleaned["risco"] = name
+            flattened.append(cleaned)
+    return flattened
+
+
+def _is_probable_inventory_table(rows: list[list[str]]) -> bool:
+    joined = "\n".join(" | ".join(row) for row in rows[:8])
+    norm = _label_key(joined)
+    return "perigo fator de risco" in norm and ("descricao do agente" in norm or "especificacao dos perigos" in norm)
+
+
+def _table_first_meaningful_value(cells: list[str], skip_values: set[str] | None = None) -> str:
+    skip_values = skip_values or set()
+    for value in cells:
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip()
+        if not cleaned:
             continue
-        # Tabelas de inventário têm linhas PERIGO/FATOR DE RISCO e Descrição do agente.
+        key = _label_key(cleaned)
+        if key in skip_values:
+            continue
+        return cleaned
+    return ""
+
+
+def _row_value_after_repeated_label(cells: list[str], label_norm: str) -> str:
+    """Retorna o primeiro valor real de uma linha com rótulos duplicados.
+
+    Ex.: ['Descrição do agente', 'Descrição do agente', 'Descrição do agente', 'Queda...'] -> 'Queda...'
+    """
+    skip = {label_norm, "prevencao e controle", "exposicao", "classificacao"}
+    return _table_first_meaningful_value(cells[1:], skip)
+
+
+def _extract_sector_name_from_inventory_table(rows: list[list[str]]) -> str:
+    for row in rows[:3]:
+        values = [re.sub(r"\s+", " ", c).strip() for c in row if re.sub(r"\s+", " ", c).strip()]
+        for value in values:
+            up = value.upper()
+            if 2 <= len(value) <= 80 and not any(skip in up for skip in [
+                "FUNÇÕES", "FUNCOES", "GRUPO", "EXPOSIÇÃO", "EXPOSICAO", "PERIGO", "FATOR", "VIGÊNCIA", "VIGENCIA"
+            ]):
+                return up
+    return "SETOR IMPORTADO"
+
+
+def _extract_sector_risks_from_docx_tables(doc) -> dict[str, list[dict[str, str]]]:
+    """Extrai riscos por setor a partir das tabelas do inventário.
+
+    Essa é a parte mais importante da importação reutilizável: o modelo antigo
+    deve guardar quais riscos pertenciam a cada setor, para aplicar isso em uma
+    empresa nova sem misturar todos os riscos em todos os setores.
+    """
+    sector_risks: dict[str, list[dict[str, str]]] = {}
+    for table in doc.tables:
+        if len(table.rows) < 6 or len(table.columns) < 4:
+            continue
         rows = [_row_cells_text(row) for row in table.rows]
+        if not _is_probable_inventory_table(rows):
+            continue
+        sector_name = _extract_sector_name_from_inventory_table(rows)
         current: dict[str, str] | None = None
         for cells in rows:
-            label = cells[0] if cells else ""
-            label_norm = _label_key(label)
-            value = ""
-            for c in cells[1:]:
-                if c and _label_key(c) != label_norm and _label_key(c) not in {"perigo fator de risco", "prevencao e controle", "exposicao"}:
-                    value = c
-                    break
+            if not cells:
+                continue
+            label_norm = _label_key(cells[0])
+            # Em alguns modelos o rótulo vem na 2ª/3ª célula por causa de mesclagens.
+            if label_norm not in {
+                "perigo fator de risco", "descricao do agente", "possiveis lesoes ou agravos a saude",
+                "fontes ou circunstancias", "epi", "epc", "medidas administrativas", "severidade"
+            }:
+                for c in cells[:3]:
+                    candidate = _label_key(c)
+                    if candidate in {
+                        "perigo fator de risco", "descricao do agente", "possiveis lesoes ou agravos a saude",
+                        "fontes ou circunstancias", "epi", "epc", "medidas administrativas", "severidade"
+                    }:
+                        label_norm = candidate
+                        break
             if label_norm == "perigo fator de risco":
                 if current and current.get("risco"):
-                    risks.append(current)
-                current = {"tipo_risco": value or "ERGONÔMICO"}
+                    sector_risks.setdefault(sector_name, []).append(current)
+                tipo = _row_value_after_repeated_label(cells, label_norm) or "ERGONÔMICO"
+                current = {"tipo_risco": tipo.strip().upper(), "setor_origem": sector_name}
             elif current is not None and label_norm == "descricao do agente":
-                current["risco"] = value
+                current["risco"] = _row_value_after_repeated_label(cells, label_norm)
+                current["descricao_agente"] = current.get("risco", "")
             elif current is not None and label_norm == "possiveis lesoes ou agravos a saude":
-                current["possiveis_lesoes"] = value
+                current["possiveis_lesoes"] = _row_value_after_repeated_label(cells, label_norm)
             elif current is not None and label_norm == "fontes ou circunstancias":
-                current["fontes_circunstancias"] = value
+                current["fontes_circunstancias"] = _row_value_after_repeated_label(cells, label_norm)
             elif current is not None and label_norm == "epi":
-                current["epis"] = value
+                current["epis"] = _row_value_after_repeated_label(cells, label_norm)
             elif current is not None and label_norm == "epc":
-                current["epcs"] = value
+                current["epcs"] = _row_value_after_repeated_label(cells, label_norm)
             elif current is not None and label_norm == "medidas administrativas":
-                current["acoes"] = value
+                current["acoes"] = _row_value_after_repeated_label(cells, label_norm)
             elif current is not None and label_norm == "severidade":
-                # Linha geralmente: Severidade | MÉDIO | Probabilidade | POSSÍVEL | Nível de risco | MODERADO
-                current["grau_severidade"] = cells[1] if len(cells) > 1 else "MÉDIO"
+                # Linha comum: Severidade | INSIGNIFICANTE | Probabilidade | POSSÍVEL | Nível de risco | BAIXO
+                current["grau_severidade"] = cells[1].strip().upper() if len(cells) > 1 and cells[1].strip() else "MÉDIO"
                 for idx, c in enumerate(cells):
                     cn = _label_key(c)
                     if cn == "probabilidade" and idx + 1 < len(cells):
-                        current["grau_possibilidade"] = cells[idx + 1]
+                        current["grau_possibilidade"] = cells[idx + 1].strip().upper()
                     if cn == "nivel de risco" and idx + 1 < len(cells):
-                        current["grau_nivel_risco"] = cells[idx + 1]
+                        current["grau_nivel_risco"] = cells[idx + 1].strip().upper()
         if current and current.get("risco"):
-            risks.append(current)
-    cleaned: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for risk in risks:
-        name = re.sub(r"\s+", " ", risk.get("risco", "")).strip()
-        if not name or len(name) < 4 or len(name) > 180:
-            continue
-        key = _simple_norm(name)
-        if key in seen:
-            continue
-        seen.add(key)
-        risk["risco"] = name
-        cleaned.append(risk)
+            sector_risks.setdefault(sector_name, []).append(current)
+
+    # Limpa duplicados por setor mantendo os detalhes do primeiro registro.
+    cleaned: dict[str, list[dict[str, str]]] = {}
+    for sector, risks in sector_risks.items():
+        seen: set[str] = set()
+        for risk in risks:
+            name = re.sub(r"\s+", " ", risk.get("risco", "")).strip()
+            if not name or len(name) < 4 or len(name) > 220:
+                continue
+            key = _simple_norm(name)
+            if key in seen:
+                continue
+            seen.add(key)
+            risk["risco"] = name
+            risk.setdefault("tipo_risco", "ERGONÔMICO")
+            risk.setdefault("grau_severidade", "MÉDIO")
+            risk.setdefault("grau_possibilidade", "POSSÍVEL")
+            risk.setdefault("grau_nivel_risco", "MODERADO")
+            cleaned.setdefault(sector, []).append(risk)
     return cleaned
 
 
@@ -1115,8 +1207,14 @@ def _extract_docx_import_payload(path: Path) -> dict[str, Any]:
     doc = Document(str(path))
     company_fields = _extract_field_from_docx_tables(doc)
     sectors_cargos = _extract_sectors_from_docx_tables(doc)
+    sector_risks = _extract_sector_risks_from_docx_tables(doc)
     risks = _extract_risks_from_docx_tables(doc)
-    return {"company_fields": company_fields, "sectors_cargos": sectors_cargos, "risks_detailed": risks}
+    return {
+        "company_fields": company_fields,
+        "sectors_cargos": sectors_cargos,
+        "risks_detailed": risks,
+        "sector_risks": sector_risks,
+    }
 
 
 def _extract_text_from_upload(file_storage) -> str:
@@ -1226,6 +1324,22 @@ def _smart_extract_laudo_data(text_value: str) -> dict[str, Any]:
 
     # Riscos: prioriza blocos estruturados do inventário. Depois cruza com riscos já cadastrados.
     riscos_detalhados = imported_payload.get("risks_detailed") or []
+    sector_risks = imported_payload.get("sector_risks") or {}
+    if isinstance(sector_risks, dict):
+        # Garante que riscos encontrados dentro dos setores também entrem no cadastro global do modelo.
+        existing_keys = {_simple_norm(str(item.get("risco", ""))) for item in riscos_detalhados if item.get("risco")}
+        for _sector_name, _risk_items in sector_risks.items():
+            if not isinstance(_risk_items, list):
+                continue
+            for _risk in _risk_items:
+                if not isinstance(_risk, dict):
+                    continue
+                _key = _simple_norm(str(_risk.get("risco", "")))
+                if _key and _key not in existing_keys:
+                    riscos_detalhados.append(_risk)
+                    existing_keys.add(_key)
+    else:
+        sector_risks = {}
     riscos = [r.get("risco", "") for r in riscos_detalhados if r.get("risco")]
     known_risks = [risk.risco for risk in Risk.query.order_by(Risk.risco.asc()).all()]
     norm_text = _simple_norm(text_value)
@@ -1265,8 +1379,11 @@ def _smart_extract_laudo_data(text_value: str) -> dict[str, Any]:
         "setores_cargos": setores_cargos[:120],
         "setores_json": json.dumps(setores_cargos[:120], ensure_ascii=False),
         "riscos": _unique_clean_lines(riscos)[:240],
-        "riscos_detalhados": riscos_detalhados[:240],
-        "riscos_json": json.dumps(riscos_detalhados[:240], ensure_ascii=False),
+        "riscos_detalhados": riscos_detalhados[:400],
+        "riscos_json": json.dumps(riscos_detalhados[:400], ensure_ascii=False),
+        "sector_risks": sector_risks,
+        "sector_risks_json": json.dumps(sector_risks, ensure_ascii=False),
+        "sector_risk_summary": {k: len(v) for k, v in sector_risks.items() if isinstance(v, list)},
         "exames": _unique_clean_lines(exames)[:100],
         "texto_preview": text_value[:6000],
     }
@@ -1972,7 +2089,12 @@ def _upsert_import_sector(item: dict[str, Any], group_id: str | None = None) -> 
         })
     if not cargos:
         cargos = [{"id": uuid.uuid4().hex, "cargo": "A DEFINIR", "cbo": "A DEFINIR", "n_func": "1", "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função."}]
-    sector = Sector.query.filter(db.func.lower(Sector.setor) == setor_name.lower()).first()
+    query = Sector.query.filter(db.func.lower(Sector.setor) == setor_name.lower())
+    if group_id:
+        query = query.filter(Sector.group_id == group_id)
+    else:
+        query = query.filter((Sector.group_id == None) | (Sector.group_id == ""))  # noqa: E711
+    sector = query.first()
     if not sector:
         sector = Sector(setor=setor_name, group_id=group_id, cargos=cargos)
         db.session.add(sector)
@@ -2005,9 +2127,14 @@ def _apply_imported_template_to_company(template: ImportedLaudoTemplate, company
     sectors_data = state.get("setores_cargos") or []
     if not sectors_data:
         sectors_data = [{"setor": name, "cargos": []} for name in (state.get("setores") or [])]
+
+    sector_risks_state = state.get("sector_risks") or {}
+    if not isinstance(sector_risks_state, dict):
+        sector_risks_state = {}
+
     risk_details = state.get("riscos_detalhados") or []
     risk_names = state.get("riscos") or []
-    # Une riscos detalhados com riscos simples, mantendo ordem e sem duplicar.
+    # Une riscos detalhados, riscos simples e riscos vinculados a setores.
     details_by_norm = {_simple_norm(str(item.get("risco", ""))): item for item in risk_details if item.get("risco")}
     merged_risk_details: list[dict[str, Any]] = []
     seen_risks: set[str] = set()
@@ -2016,6 +2143,17 @@ def _apply_imported_template_to_company(template: ImportedLaudoTemplate, company
         if key and key not in seen_risks:
             merged_risk_details.append(item)
             seen_risks.add(key)
+    for _sector_name, sector_risk_items in sector_risks_state.items():
+        if not isinstance(sector_risk_items, list):
+            continue
+        for item in sector_risk_items:
+            if not isinstance(item, dict):
+                continue
+            key = _simple_norm(str(item.get("risco", "")))
+            if key and key not in seen_risks:
+                merged_risk_details.append(item)
+                seen_risks.add(key)
+                details_by_norm[key] = item
     for name in risk_names:
         key = _simple_norm(name)
         if key and key not in seen_risks:
@@ -2023,15 +2161,31 @@ def _apply_imported_template_to_company(template: ImportedLaudoTemplate, company
             seen_risks.add(key)
 
     sectors: list[Sector] = []
+    sector_by_norm_name: dict[str, Sector] = {}
     for item in sectors_data:
         sector = _upsert_import_sector(item, group_id=group_id)
         if sector:
             sectors.append(sector)
+            sector_by_norm_name[_simple_norm(sector.setor)] = sector
+
+    # Se o inventário trouxe um setor com riscos mas a relação função x atividade não trouxe,
+    # cria o setor mínimo para manter o vínculo risco/setor do modelo antigo.
+    for sector_name in sector_risks_state.keys():
+        key = _simple_norm(sector_name)
+        if key and key not in sector_by_norm_name:
+            sector = _upsert_import_sector({"setor": sector_name, "cargos": []}, group_id=group_id)
+            if sector:
+                sectors.append(sector)
+                sector_by_norm_name[_simple_norm(sector.setor)] = sector
+
     risks: list[Risk] = []
+    risk_by_norm_name: dict[str, Risk] = {}
     for detail in merged_risk_details:
         risk = _upsert_import_risk(detail)
         if risk:
             risks.append(risk)
+            risk_by_norm_name[_simple_norm(risk.risco)] = risk
+
     exams: list[Exam] = []
     for exam_name in (state.get("exames") or []):
         exam = _upsert_import_exam(exam_name)
@@ -2040,10 +2194,39 @@ def _apply_imported_template_to_company(template: ImportedLaudoTemplate, company
 
     company = db.session.get(Company, company_id)
     today = (company.data_atual if company else "") or state.get("data_atual") or datetime.now().strftime("%m/%Y")
-    final = (company.data_final if company else "") or state.get("data_final") or ""
     selected_sector_ids = [s.id for s in sectors]
-    risk_ids = [r.id for r in risks]
+    all_risk_ids = [r.id for r in risks]
     exam_ids = [e.id for e in exams]
+
+    selected_risk_ids_by_sector: dict[str, list[str]] = {}
+    selected_exam_ids_by_sector: dict[str, list[str]] = {}
+    selected_risk_group_ids_by_sector: dict[str, list[str]] = {}
+    for sector in sectors:
+        sector_key = _simple_norm(sector.setor)
+        matched_key = None
+        for original_sector_name in sector_risks_state.keys():
+            if _simple_norm(original_sector_name) == sector_key:
+                matched_key = original_sector_name
+                break
+        sector_specific_risks = sector_risks_state.get(matched_key, []) if matched_key else []
+        ids: list[str] = []
+        if isinstance(sector_specific_risks, list) and sector_specific_risks:
+            for detail in sector_specific_risks:
+                if not isinstance(detail, dict):
+                    continue
+                name = str(detail.get("risco", ""))
+                risk = risk_by_norm_name.get(_simple_norm(name)) or _upsert_import_risk(detail)
+                if risk:
+                    risk_by_norm_name[_simple_norm(risk.risco)] = risk
+                    if risk.id not in ids:
+                        ids.append(risk.id)
+        else:
+            # Compatibilidade para modelos importados antigos que ainda não tinham vínculo por setor.
+            ids = list(all_risk_ids)
+        selected_risk_ids_by_sector[sector.id] = ids
+        selected_exam_ids_by_sector[sector.id] = list(exam_ids)
+        selected_risk_group_ids_by_sector[sector.id] = []
+
     profile_state = {
         "company_id": company_id,
         "data_criacao_laudo": today,
@@ -2052,10 +2235,11 @@ def _apply_imported_template_to_company(template: ImportedLaudoTemplate, company
         "profile_id": "",
         "profile_name": f"Importado de {template.nome}",
         "selected_sector_ids": selected_sector_ids,
-        "selected_risk_ids_by_sector": {sector_id: risk_ids for sector_id in selected_sector_ids},
-        "selected_risk_group_ids_by_sector": {sector_id: [] for sector_id in selected_sector_ids},
-        "selected_exam_ids_by_sector": {sector_id: exam_ids for sector_id in selected_sector_ids},
+        "selected_risk_ids_by_sector": selected_risk_ids_by_sector,
+        "selected_risk_group_ids_by_sector": selected_risk_group_ids_by_sector,
+        "selected_exam_ids_by_sector": selected_exam_ids_by_sector,
         "aet": {"general": {}, "by_sector": {}},
+        "imported_template_id": template.id,
     }
     profile = ReportProfile(
         company_id=company_id,
@@ -2626,8 +2810,14 @@ def salvar_importacao_laudo_antigo():
             riscos_json = []
     except Exception:
         riscos_json = []
+    try:
+        sector_risks_json = json.loads(_field("sector_risks_json") or "{}")
+        if not isinstance(sector_risks_json, dict):
+            sector_risks_json = {}
+    except Exception:
+        sector_risks_json = {}
 
-    if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text and not setores_json and not riscos_json:
+    if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text and not setores_json and not riscos_json and not sector_risks_json:
         flash("Nenhum dado foi informado para salvar.", "error")
         return redirect(url_for("importar_laudo_antigo"))
 
@@ -2663,6 +2853,7 @@ def salvar_importacao_laudo_antigo():
         "setores_cargos": setores_json,
         "riscos": _unique_clean_lines(riscos_text.splitlines()),
         "riscos_detalhados": riscos_json,
+        "sector_risks": sector_risks_json,
         "exames": _unique_clean_lines(exames_text.splitlines()),
         "grupo_id_preferencial": group_id or "",
     }
@@ -2676,9 +2867,10 @@ def salvar_importacao_laudo_antigo():
     db.session.commit()
     sector_total = len(template_state["setores_cargos"] or template_state["setores"])
     risk_total = len(template_state["riscos_detalhados"] or template_state["riscos"])
+    linked_total = sum(len(v) for v in (template_state.get("sector_risks") or {}).values() if isinstance(v, list))
     exam_total = len(template_state["exames"])
     flash(
-        f"Importação salva como modelo reutilizável: {template.nome}. Foram guardados {sector_total} setor(es)/grupo(s), {risk_total} risco(s) e {exam_total} exame(s). Agora vá em Gerar laudos, selecione qualquer empresa e aplique este modelo importado.",
+        f"Importação salva como modelo reutilizável: {template.nome}. Foram guardados {sector_total} setor(es)/grupo(s), {risk_total} risco(s), {linked_total} vínculo(s) risco/setor e {exam_total} exame(s). Agora vá em Gerar laudos, selecione qualquer empresa e aplique este modelo importado.",
         "success",
     )
     return redirect(url_for("importar_laudo_antigo"))

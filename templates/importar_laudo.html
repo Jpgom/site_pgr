@@ -106,6 +106,7 @@
     </label>
     <input type="hidden" name="setores_json" value='{{ extracted.get("setores_json", "[]")|e }}'>
     <input type="hidden" name="riscos_json" value='{{ extracted.get("riscos_json", "[]")|e }}'>
+    <input type="hidden" name="sector_risks_json" value='{{ extracted.get("sector_risks_json", "{}")|e }}'>
     <label class="span-2">
       <span>Setores encontrados</span>
       <textarea name="setores_extraidos" rows="7" placeholder="Um setor por linha">{{ extracted.get('setores', [])|join('\n') }}</textarea>
@@ -116,6 +117,17 @@
       <textarea name="riscos_extraidos" rows="9" placeholder="Um risco por linha">{{ extracted.get('riscos', [])|join('\n') }}</textarea>
       <small>Riscos novos entram como cadastro provisório para revisão técnica.</small>
     </label>
+    {% if extracted.get('sector_risk_summary') %}
+    <div class="span-2 import-summary-box">
+      <strong>Riscos por setor encontrados no inventário</strong>
+      <p class="muted small-note">Esses vínculos serão guardados no modelo e aplicados automaticamente na empresa nova.</p>
+      <div class="mini-list">
+        {% for setor, qtd in extracted.get('sector_risk_summary', {}).items() %}
+          <span class="pill-soft">{{ setor }} · {{ qtd }} risco(s)</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
     <label class="span-2">
       <span>Exames encontrados</span>
       <textarea name="exames_extraidos" rows="6" placeholder="Um exame por linha">{{ extracted.get('exames', [])|join('\n') }}</textarea>
