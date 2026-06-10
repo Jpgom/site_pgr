@@ -1052,6 +1052,7 @@ def _company_payload_from_form() -> dict[str, str]:
             data["data_atual"] = _field("data_atual") or data.get("data_atual", "")
             data["data_final"] = _field("data_final") or data.get("data_final", "")
             data.update(_generation_form_extras())
+            data["aet"] = _aet_form_data_from_request()
             return data
     data = _form_to_company()
     data["empresa"] = data.get("nome", "")
@@ -1062,6 +1063,7 @@ def _company_payload_from_form() -> dict[str, str]:
     data["descricao_atividade_secundaria"] = data.get("descricao2", "")
     data["grau_risco_secundario"] = data.get("grau2", "")
     data.update(_generation_form_extras())
+    data["aet"] = _aet_form_data_from_request()
     return data
 
 def _selected_risks() -> list[dict[str, Any]]:
@@ -1437,6 +1439,44 @@ def delete_exam(exam_id: str):
     return redirect(url_for("exames"))
 
 
+def _aet_form_data_from_request() -> dict[str, Any]:
+    """Dados detalhados da AET informados no wizard de geração.
+
+    Fica salvo junto da configuração da empresa para permitir regeneração sem
+    perder análise ergonômica, observações e conclusões por setor.
+    """
+    sector_ids = request.form.getlist("pgr_sector_ids")
+    general = {
+        "tipo_aet": _field("aet_tipo") or "AET documental com análise por setor",
+        "responsavel_tecnico": _field("aet_responsavel_tecnico"),
+        "metodologia": request.form.getlist("aet_metodologia"),
+        "objetivo_complementar": _field("aet_objetivo_complementar"),
+        "criterios_analise": _field("aet_criterios_analise"),
+        "conclusao_geral_manual": _field("aet_conclusao_geral"),
+    }
+    by_sector: dict[str, Any] = {}
+    for sector_id in sector_ids:
+        by_sector[sector_id] = {
+            "postura_predominante": request.form.getlist(f"aet_postura_{sector_id}"),
+            "exigencia_fisica": _field(f"aet_exigencia_fisica_{sector_id}"),
+            "exigencia_cognitiva": _field(f"aet_exigencia_cognitiva_{sector_id}"),
+            "ritmo_trabalho": _field(f"aet_ritmo_trabalho_{sector_id}"),
+            "pausas": _field(f"aet_pausas_{sector_id}"),
+            "mobiliario": _field(f"aet_mobiliario_{sector_id}"),
+            "ambiente": _field(f"aet_ambiente_{sector_id}"),
+            "organizacao": _field(f"aet_organizacao_{sector_id}"),
+            "equipamentos": _field(f"aet_equipamentos_{sector_id}"),
+            "queixas": _field(f"aet_queixas_{sector_id}"),
+            "observacoes": _field(f"aet_observacoes_{sector_id}"),
+            "recomendacoes": _field(f"aet_recomendacoes_{sector_id}"),
+            "prioridade": _field(f"aet_prioridade_{sector_id}"),
+            "prazo": _field(f"aet_prazo_{sector_id}"),
+            "responsavel": _field(f"aet_responsavel_{sector_id}"),
+            "conclusao_setor": _field(f"aet_conclusao_setor_{sector_id}"),
+        }
+    return {"general": general, "by_sector": by_sector}
+
+
 def _gerar_form_state_from_request() -> dict[str, Any]:
     sector_ids = request.form.getlist("pgr_sector_ids")
     risks_by_sector = {sector_id: request.form.getlist(f"sector_risk_ids_{sector_id}") for sector_id in sector_ids}
@@ -1453,6 +1493,7 @@ def _gerar_form_state_from_request() -> dict[str, Any]:
         "selected_risk_ids_by_sector": risks_by_sector,
         "selected_risk_group_ids_by_sector": risk_groups_by_sector,
         "selected_exam_ids_by_sector": exams_by_sector,
+        "aet": _aet_form_data_from_request(),
     }
 
 
@@ -2431,13 +2472,18 @@ def generate_pgr_aet_psychosocial():
     try:
         with tempfile.TemporaryDirectory() as tmp:
             tmpdir = Path(tmp)
-            aet_docx = _save_uploaded_file(request.files.get("aet_docx"), tmpdir, {".docx"}, "AET em Word (.docx)")
             psicossocial_pdf = _save_uploaded_file(request.files.get("psicossocial_pdf"), tmpdir, {".pdf"}, "Relatório Psicossocial em PDF")
             empresa = company.get("empresa") or company.get("nome", "")
             cnpj = company.get("cnpj", "")
             data_atual = company.get("data_atual", "")
             data_final = company.get("data_final", "")
             pgr_docx = tmpdir / "pgr_gerado.docx"
+            aet_upload = request.files.get("aet_docx")
+            if aet_upload and getattr(aet_upload, "filename", ""):
+                aet_docx = _save_uploaded_file(aet_upload, tmpdir, {".docx"}, "AET em Word (.docx)")
+            else:
+                aet_docx = tmpdir / "aet_gerada.docx"
+                generate_aet_docx(groups, aet_docx, empresa, cnpj, data_atual, data_final, company)
             generate_complete_pgr_docx(groups, pgr_docx, empresa, cnpj, data_atual, data_final, company)
             _save_report_profile_from_form(auto=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

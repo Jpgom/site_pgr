@@ -1786,3 +1786,419 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# AET COMPLETA - modelo gerado pelo sistema com cabeçalho/rodapé do PGR
+# ---------------------------------------------------------------------------
+
+def _clear_document_body_keep_section(doc: Document) -> None:
+    body = doc._element.body
+    sect_pr = None
+    for child in list(body):
+        if child.tag == qn("w:sectPr"):
+            sect_pr = deepcopy(child)
+        body.remove(child)
+    if sect_pr is not None:
+        body.append(sect_pr)
+
+
+def _aet_list_text(values: Any, fallback: str = "Não informado") -> str:
+    if isinstance(values, (list, tuple)):
+        cleaned = [str(v).strip() for v in values if str(v).strip()]
+        return ", ".join(cleaned) if cleaned else fallback
+    value = str(values or "").strip()
+    return value or fallback
+
+
+def _aet_risk_recommendation(risk: Mapping[str, Any]) -> str:
+    action = str(risk.get("acoes", "") or "").strip()
+    if action:
+        return action
+    risk_name = str(risk.get("risco", "") or "").lower()
+    if "postura" in risk_name or "sentado" in risk_name or "pé" in risk_name:
+        return "Promover alternância postural, pausas programadas e orientação ergonômica.\nTREINAMENTO DE NR – NR-17"
+    if "repet" in risk_name:
+        return "Promover pausas, rodízio de tarefas e adequação do ritmo de trabalho.\nTREINAMENTO DE NR – NR-17"
+    if "psicossocial" in str(risk.get("tipo_risco", "")).lower() or "sobrecarga" in risk_name or "assédio" in risk_name:
+        return "Fortalecer canais de comunicação, acompanhar demandas e orientar liderança e trabalhadores.\nTREINAMENTO DE NR – NR-01 / NR-17"
+    return "Manter acompanhamento das condições de trabalho e implantar medidas preventivas conforme necessidade."
+
+
+def _aet_auto_sector_conclusion(sector_name: str, risks: list[Mapping[str, Any]], data: Mapping[str, Any]) -> str:
+    manual = str(data.get("conclusao_setor", "") or "").strip()
+    if manual:
+        return manual
+    has_psy = any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for r in risks)
+    has_erg = any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO" for r in risks)
+    if has_psy and has_erg:
+        return f"No setor {sector_name}, foram identificados fatores ergonômicos e psicossociais relacionados à organização e execução das atividades, recomendando-se acompanhamento contínuo, orientação dos trabalhadores e implantação das medidas preventivas descritas."
+    if has_psy:
+        return f"No setor {sector_name}, foram identificados fatores psicossociais associados à organização do trabalho, comunicação, demandas e relações laborais, recomendando-se acompanhamento gerencial e ações preventivas específicas."
+    if has_erg:
+        return f"No setor {sector_name}, foram identificados fatores ergonômicos compatíveis com a rotina laboral, recomendando-se adequações de postura, pausas, organização do posto e acompanhamento das queixas dos trabalhadores."
+    return f"No setor {sector_name}, não foram selecionados fatores ergonômicos ou psicossociais específicos no momento da geração, recomendando-se manutenção do acompanhamento das condições de trabalho."
+
+
+def _aet_priority_from_risks(risks: list[Mapping[str, Any]], manual: str = "") -> str:
+    if manual:
+        return manual
+    levels = {_normalize_option(r.get("grau_nivel_risco")) for r in risks}
+    if "MUITO ALTO" in levels or "ALTO" in levels:
+        return "Alta"
+    if "MODERADO" in levels:
+        return "Média"
+    return "Baixa"
+
+
+def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empresa: str = "", cnpj: str = "", data_atual: str = "", data_final: str = "", company: Mapping[str, Any] | None = None) -> Path:
+    """Gera AET completa com formulário detalhado, dados de PGR/PCMSO/LTCAT e padrão visual da clínica.
+
+    Usa o modelo do PGR apenas como base de cabeçalho/rodapé e identidade visual,
+    criando o corpo da AET de forma estruturada e editável.
+    """
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+    from docx.shared import Inches, Pt, RGBColor
+
+    if not groups:
+        raise ValueError("Selecione pelo menos um setor para gerar a AET.")
+    company = company or {}
+    company_doc = _company_dict_for_docs(empresa, cnpj, data_atual, data_final, company)
+    aet_data = company.get("aet") or {}
+    general = aet_data.get("general", {}) if isinstance(aet_data, Mapping) else {}
+    by_sector = aet_data.get("by_sector", {}) if isinstance(aet_data, Mapping) else {}
+
+    doc = Document(str(TEMPLATE_PGR_COMPLETO_PATH)) if TEMPLATE_PGR_COMPLETO_PATH.exists() else Document()
+    _clear_document_body_keep_section(doc)
+    _replace_doc_placeholders(doc, _company_replacements(company_doc))
+
+    for section in doc.sections:
+        section.top_margin = Inches(0.55)
+        section.bottom_margin = Inches(0.55)
+        section.left_margin = Inches(0.55)
+        section.right_margin = Inches(0.55)
+
+    styles = doc.styles
+    styles["Normal"].font.name = "Arial Narrow"
+    styles["Normal"].font.size = Pt(10)
+
+    def _run_font(run, size=10, bold=False, color=None):
+        run.font.name = "Arial Narrow"
+        run.font.size = Pt(size)
+        run.bold = bold
+        if color:
+            run.font.color.rgb = RGBColor.from_string(color)
+
+    def _set_paragraph_border(paragraph, position="bottom", color="6B1D1D", size="12"):
+        p_pr = paragraph._p.get_or_add_pPr()
+        p_bdr = p_pr.find(qn("w:pBdr"))
+        if p_bdr is None:
+            p_bdr = OxmlElement("w:pBdr")
+            p_pr.append(p_bdr)
+        el = p_bdr.find(qn(f"w:{position}"))
+        if el is None:
+            el = OxmlElement(f"w:{position}")
+            p_bdr.append(el)
+        el.set(qn("w:val"), "single")
+        el.set(qn("w:sz"), size)
+        el.set(qn("w:space"), "1")
+        el.set(qn("w:color"), color)
+
+    def _set_table_borders(table, color="808080", size="4"):
+        for row in table.rows:
+            for cell in row.cells:
+                tc_pr = cell._tc.get_or_add_tcPr()
+                tc_borders = tc_pr.find(qn("w:tcBorders"))
+                if tc_borders is None:
+                    tc_borders = OxmlElement("w:tcBorders")
+                    tc_pr.append(tc_borders)
+                for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+                    tag = qn(f"w:{edge}")
+                    el = tc_borders.find(tag)
+                    if el is None:
+                        el = OxmlElement(f"w:{edge}")
+                        tc_borders.append(el)
+                    el.set(qn("w:val"), "single")
+                    el.set(qn("w:sz"), size)
+                    el.set(qn("w:space"), "0")
+                    el.set(qn("w:color"), color)
+
+    def _apply_aet_header_footer():
+        for section in doc.sections:
+            for part in (section.header, section.first_page_header, section.even_page_header):
+                try:
+                    for child in list(part._element):
+                        part._element.remove(child)
+                    p = part.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    _run_font(p.add_run("AET – ANÁLISE ERGONÔMICA DO TRABALHO"), 11, True)
+                    p2 = part.add_paragraph()
+                    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    _run_font(p2.add_run(company_doc.get("empresa", "")), 10, True)
+                    _set_paragraph_border(p2, "bottom", "6B1D1D", "12")
+                except Exception:
+                    pass
+            for part in (section.footer, section.first_page_footer, section.even_page_footer):
+                try:
+                    for child in list(part._element):
+                        part._element.remove(child)
+                    p = part.add_paragraph()
+                    _set_paragraph_border(p, "top", "6B1D1D", "12")
+                    _run_font(p.add_run("ELABORAÇÃO\nFONE: (91) 98354-0469 / 98354-0444 / 3349-6948\n(96) 3223-7946 / 3222-7682\nEMAIL: EDGESETORTECNICO@HOTMAIL.COM"), 8, True)
+                except Exception:
+                    pass
+
+    def add_title(text: str, size: int = 18):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(4)
+        r = p.add_run(text)
+        _run_font(r, size=size, bold=True)
+        return p
+
+    def add_heading(text: str, level: int = 1):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(8 if level == 1 else 5)
+        p.paragraph_format.space_after = Pt(3)
+        r = p.add_run(text)
+        _run_font(r, size=12 if level == 1 else 10, bold=True)
+        return p
+
+    def add_text(text: str):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.space_after = Pt(3)
+        r = p.add_run(str(text or ""))
+        _run_font(r, size=10)
+        return p
+
+    def set_table_font(table, header: bool = True):
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        _set_table_borders(table)
+        for row_idx, row in enumerate(table.rows):
+            for cell in row.cells:
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                for paragraph in cell.paragraphs:
+                    paragraph.paragraph_format.space_after = Pt(0)
+                    for run in paragraph.runs:
+                        _run_font(run, size=8 if len(table.columns) >= 5 else 9, bold=(header and row_idx == 0))
+
+    def add_kv_table(items):
+        tbl = doc.add_table(rows=0, cols=2)
+        
+        try:
+            tbl.style = "Table Grid"
+        except KeyError:
+            pass
+        for label, value in items:
+            row = tbl.add_row().cells
+            row[0].text = str(label)
+            row[1].text = str(value or "")
+        set_table_font(tbl)
+        return tbl
+
+    sectors = _unique_sectors_from_groups(groups)
+    all_erg_risks = []
+    for group in groups:
+        for risk in group.get("risks", []) or []:
+            if _normalize_option(risk.get("tipo_risco")) in {"ERGONÔMICO", "ERGONÔMICO PSICOSSOCIAL"}:
+                all_erg_risks.append(risk)
+
+    # CAPA
+    add_title("AET – ANÁLISE ERGONÔMICA DO TRABALHO", 18)
+    add_title("NR 17", 15)
+    add_title(company_doc.get("empresa") or empresa or "EMPRESA", 14)
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run_font(p.add_run(f"Data do documento: {company_doc.get('data_atual', '')}"), 11, True)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run_font(p.add_run(f"Revisão periódica: {company_doc.get('data_atual', '')} à {company_doc.get('data_final', '')}"), 11, True)
+    if company_doc.get("ajuste_psicossocial") == "1" and company_doc.get("data_da_revisao"):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _run_font(p.add_run(f"Revisão periódica de inclusão de Risco Psicossocial: {company_doc.get('data_da_revisao')}"), 11, True)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run_font(p.add_run(f"Data de elaboração da AET: {company_doc.get('data_criacao_laudo') or company_doc.get('data_avaliacao') or company_doc.get('data_atual', '')}"), 10, True)
+
+    doc.add_page_break()
+    add_heading("IDENTIFICAÇÃO DA EMPRESA")
+    add_kv_table([
+        ("EMPRESA", company_doc.get("empresa")),
+        ("ENDEREÇO", company_doc.get("endereco")),
+        ("BAIRRO / CIDADE", company_doc.get("bairro_cidade")),
+        ("CEP", company_doc.get("cep")),
+        ("CNPJ", company_doc.get("cnpj")),
+        ("CNAE", company_doc.get("cnae")),
+        ("DESCRIÇÃO DA ATIVIDADE", company_doc.get("descricao_atividade")),
+        ("GRAU DE RISCO", company_doc.get("grau_risco")),
+        ("CNAE (SECUNDÁRIO)", company_doc.get("cnae_secundario")),
+        ("DESCRIÇÃO DA ATIVIDADE (SECUNDÁRIA)", company_doc.get("descricao_atividade_secundaria")),
+        ("GRAU DE RISCO (SECUNDÁRIO)", company_doc.get("grau_risco_secundario")),
+        ("FUNCIONÁRIOS", company_doc.get("funcionarios") or _total_funcionarios_from_sectors(sectors)),
+        ("VIGÊNCIA", f"{company_doc.get('data_atual', '')} – {company_doc.get('data_final', '')}"),
+        ("EMAIL", company_doc.get("email")),
+        ("FONE", company_doc.get("fone")),
+    ])
+
+    add_heading("RESPONSABILIDADE TÉCNICA")
+    responsavel = str(general.get("responsavel_tecnico", "") or "Responsável técnico a definir pela clínica").strip()
+    add_text(f"O presente documento foi elaborado com base nas informações fornecidas pela empresa, nos setores e cargos cadastrados, nos riscos ergonômicos e psicossociais selecionados no sistema e nos dados complementares preenchidos no formulário de AET. Responsável técnico: {responsavel}.")
+
+    add_heading("OBJETIVO")
+    objetivo_extra = str(general.get("objetivo_complementar", "") or "").strip()
+    add_text("A presente Análise Ergonômica do Trabalho tem por objetivo avaliar as condições de trabalho, considerando aspectos relacionados à organização do trabalho, exigências físicas, cognitivas, biomecânicas, ambientais e psicossociais, visando propor medidas de adequação, prevenção e melhoria das condições laborais, conforme diretrizes da NR-17." + (f" {objetivo_extra}" if objetivo_extra else ""))
+
+    add_heading("METODOLOGIA")
+    metodologias = general.get("metodologia") or []
+    met_text = _aet_list_text(metodologias, "Levantamento documental, análise dos setores/cargos cadastrados, avaliação dos riscos selecionados e preenchimento do formulário ergonômico por setor")
+    add_text(f"A análise foi realizada considerando: {met_text}. Foram integradas ao documento as informações já existentes nos módulos de PGR, PCMSO e LTCAT, especialmente identificação da empresa, relação função x atividade, riscos cadastrados, possíveis agravos, fontes/circunstâncias e medidas preventivas/corretivas.")
+    criterios = str(general.get("criterios_analise", "") or "").strip()
+    if criterios:
+        add_text(f"Critérios complementares informados: {criterios}")
+
+    doc.add_page_break()
+    add_heading("RELAÇÃO FUNÇÃO X ATIVIDADE")
+    rel = doc.add_table(rows=1, cols=5)
+    
+    try:
+        rel.style = "Table Grid"
+    except KeyError:
+        pass
+    headers = ["SETOR", "CARGO", "CBO", "Nº FUNC.", "DESCRIÇÃO DA ATIVIDADE"]
+    for i, h in enumerate(headers):
+        rel.rows[0].cells[i].text = h
+    for sector in sectors:
+        cargos = sector.get("cargos", []) or []
+        if not cargos:
+            row = rel.add_row().cells
+            row[0].text = sector.get("setor", "")
+        for cargo in cargos:
+            row = rel.add_row().cells
+            row[0].text = sector.get("setor", "")
+            row[1].text = str(cargo.get("cargo", ""))
+            row[2].text = str(cargo.get("cbo", ""))
+            row[3].text = str(cargo.get("n_func", ""))
+            row[4].text = str(cargo.get("descricao", ""))
+    set_table_font(rel)
+
+    doc.add_page_break()
+    add_heading("ANÁLISE ERGONÔMICA POR SETOR")
+    for group in groups:
+        sector = group.get("sector", {}) or {}
+        sector_id = sector.get("id", "")
+        sector_name = sector.get("setor", "")
+        sector_data = by_sector.get(sector_id, {}) if isinstance(by_sector, Mapping) else {}
+        risks = [risk for risk in group.get("risks", []) or [] if _normalize_option(risk.get("tipo_risco")) in {"ERGONÔMICO", "ERGONÔMICO PSICOSSOCIAL"}]
+        cargos = ", ".join([str(c.get("cargo", "")) for c in (sector.get("cargos", []) or []) if c.get("cargo")])
+        descricoes = [str(c.get("descricao", "")) for c in (sector.get("cargos", []) or []) if c.get("descricao")]
+
+        add_heading(f"SETOR: {sector_name}", 1)
+        if cargos:
+            add_text(f"Cargos abrangidos: {cargos}.")
+        if descricoes:
+            add_text("Características das atividades: " + " ".join(descricoes))
+
+        info = [
+            ("Postura predominante", _aet_list_text(sector_data.get("postura_predominante"), "A definir conforme observação da atividade")),
+            ("Exigência física", sector_data.get("exigencia_fisica") or "A definir"),
+            ("Exigência cognitiva", sector_data.get("exigencia_cognitiva") or "A definir"),
+            ("Ritmo de trabalho", sector_data.get("ritmo_trabalho") or "Compatível com a rotina operacional informada"),
+            ("Pausas/recuperação", sector_data.get("pausas") or "Pausas conforme organização interna e necessidade da atividade"),
+            ("Mobiliário/posto", sector_data.get("mobiliario") or "A avaliar/manter adequado à atividade"),
+            ("Condições ambientais", sector_data.get("ambiente") or "Condições ambientais devem ser mantidas em níveis adequados de conforto"),
+            ("Organização do trabalho", sector_data.get("organizacao") or "Rotina organizada conforme demandas do setor"),
+            ("Equipamentos/ferramentas", sector_data.get("equipamentos") or "Equipamentos compatíveis com as atividades cadastradas"),
+            ("Queixas/observações", sector_data.get("queixas") or sector_data.get("observacoes") or "Não informado"),
+            ("Prioridade", _aet_priority_from_risks(risks, sector_data.get("prioridade", ""))),
+        ]
+        add_kv_table(info)
+
+        add_heading("Fatores ergonômicos e psicossociais identificados", 2)
+        if risks:
+            tbl = doc.add_table(rows=1, cols=5)
+            
+        try:
+            tbl.style = "Table Grid"
+        except KeyError:
+            pass
+            for i, h in enumerate(["FATOR/RISCO", "TIPO", "POSSÍVEIS IMPACTOS", "FONTES/CIRCUNSTÂNCIAS", "RECOMENDAÇÕES"]):
+                tbl.rows[0].cells[i].text = h
+            for risk in risks:
+                row = tbl.add_row().cells
+                row[0].text = str(risk.get("risco", ""))
+                row[1].text = str(risk.get("tipo_risco", ""))
+                row[2].text = str(risk.get("possiveis_lesoes", ""))
+                row[3].text = str(risk.get("fontes_circunstancias", ""))
+                row[4].text = _aet_risk_recommendation(risk)
+            set_table_font(tbl)
+        else:
+            add_text("Não foram selecionados fatores ergonômicos ou psicossociais específicos para este setor. Recomenda-se manter acompanhamento das condições de trabalho e atualizar a AET quando houver alteração de atividade, layout, mobiliário, jornada, organização do trabalho ou surgimento de queixas.")
+
+        add_heading("Recomendações e plano de ação ergonômico do setor", 2)
+        rec_manual = str(sector_data.get("recomendacoes", "") or "").strip()
+        if rec_manual:
+            add_text(rec_manual)
+        plan = doc.add_table(rows=1, cols=5)
+        
+        try:
+            plan.style = "Table Grid"
+        except KeyError:
+            pass
+        for i, h in enumerate(["ACHADO ERGONÔMICO", "MEDIDA RECOMENDADA", "PRAZO", "RESPONSÁVEL", "PRIORIDADE"]):
+            plan.rows[0].cells[i].text = h
+        if risks:
+            for risk in risks:
+                row = plan.add_row().cells
+                row[0].text = str(risk.get("risco", ""))
+                row[1].text = _aet_risk_recommendation(risk)
+                row[2].text = str(sector_data.get("prazo") or ("30 DIAS" if _normalize_option(risk.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" else "Conforme plano de ação"))
+                row[3].text = str(sector_data.get("responsavel") or "Empresa")
+                row[4].text = _aet_priority_from_risks([risk], sector_data.get("prioridade", ""))
+        else:
+            row = plan.add_row().cells
+            row[0].text = "Acompanhamento preventivo"
+            row[1].text = "Manter boas práticas ergonômicas, organização do posto e acompanhamento periódico."
+            row[2].text = str(sector_data.get("prazo") or "Contínuo")
+            row[3].text = str(sector_data.get("responsavel") or "Empresa")
+            row[4].text = str(sector_data.get("prioridade") or "Baixa")
+        set_table_font(plan)
+
+        add_heading("Conclusão do setor", 2)
+        add_text(_aet_auto_sector_conclusion(sector_name, risks, sector_data))
+
+    add_heading("CONCLUSÃO GERAL")
+    manual_conclusion = str(general.get("conclusao_geral_manual", "") or "").strip()
+    if manual_conclusion:
+        add_text(manual_conclusion)
+    else:
+        if any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for r in all_erg_risks):
+            add_text("Conclui-se que as atividades analisadas apresentam fatores ergonômicos e psicossociais que devem ser acompanhados pela empresa, com implantação das medidas preventivas/corretivas indicadas, fortalecimento da comunicação, organização das demandas, orientação de liderança e trabalhadores e revisão periódica das condições de trabalho.")
+        elif all_erg_risks:
+            add_text("Conclui-se que as atividades analisadas apresentam fatores ergonômicos compatíveis com a rotina operacional, sendo recomendada a implantação das medidas de adequação postural, organização do posto, pausas, orientação ergonômica e acompanhamento periódico das condições de trabalho.")
+        else:
+            add_text("Conclui-se que, com base nas informações cadastradas, não foram evidenciados fatores ergonômicos críticos específicos nos setores selecionados, recomendando-se a manutenção das medidas preventivas, acompanhamento periódico e atualização da AET sempre que houver alteração na organização do trabalho, layout, mobiliário, processo ou queixas dos trabalhadores.")
+    add_text("Esta AET deve ser revisada sempre que houver alteração relevante nas atividades, processos, mobiliário, layout, jornada, organização do trabalho, número de trabalhadores, ocorrência de queixas recorrentes ou inclusão de novos riscos ergonômicos/psicossociais no PGR.")
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run_font(p.add_run("___________________________________________"), 10, True)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run_font(p.add_run(responsavel), 10, True)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _run_font(p.add_run("Responsável Técnico"), 10, True)
+
+    _replace_doc_placeholders(doc, _company_replacements(company_doc))
+    _apply_aet_header_footer()
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path))
+    return output_path

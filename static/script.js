@@ -140,18 +140,11 @@ if (pgrForm) {
       return;
     }
     if (action.includes('gerar-pgr-aet-psicossocial')) {
-      const aetFile = pgrForm.querySelector('input[name="aet_docx"]');
       const psychFile = pgrForm.querySelector('input[name="psicossocial_pdf"]');
-      if (aetFile && !aetFile.value) {
-        event.preventDefault();
-        aetFile.focus();
-        alert('Envie a AET em Word para juntar com o PGR. Suas marcações foram mantidas.');
-        return;
-      }
       if (psychFile && !psychFile.value) {
         event.preventDefault();
         psychFile.focus();
-        alert('Envie o Relatório Psicossocial em PDF. Suas marcações foram mantidas.');
+        alert('Envie o Relatório Psicossocial em PDF. Suas marcações foram mantidas. A AET será gerada automaticamente se você não enviar uma AET externa.');
         return;
       }
     }
@@ -465,6 +458,30 @@ function setCheckboxesByName(name, values) {
   document.querySelectorAll(`input[name="${name}"]`).forEach((box) => { box.checked = set.has(box.value); });
 }
 
+function setFieldValueByName(name, value) {
+  const field = document.querySelector(`[name="${CSS.escape(name)}"]`);
+  if (!field) return;
+  field.value = value || '';
+}
+
+function loadAetState(state) {
+  const aet = state.aet || {};
+  const general = aet.general || {};
+  const bySector = aet.by_sector || {};
+  setFieldValueByName('aet_tipo', general.tipo_aet || '');
+  setFieldValueByName('aet_responsavel_tecnico', general.responsavel_tecnico || '');
+  setCheckboxesByName('aet_metodologia', general.metodologia || []);
+  setFieldValueByName('aet_objetivo_complementar', general.objetivo_complementar || '');
+  setFieldValueByName('aet_criterios_analise', general.criterios_analise || '');
+  setFieldValueByName('aet_conclusao_geral', general.conclusao_geral_manual || '');
+  Object.entries(bySector).forEach(([sectorId, data]) => {
+    setCheckboxesByName(`aet_postura_${sectorId}`, data.postura_predominante || []);
+    ['exigencia_fisica','exigencia_cognitiva','ritmo_trabalho','pausas','mobiliario','ambiente','organizacao','equipamentos','queixas','observacoes','recomendacoes','prioridade','prazo','responsavel','conclusao_setor'].forEach((key) => {
+      setFieldValueByName(`aet_${key}_${sectorId}`, data[key] || '');
+    });
+  });
+}
+
 function clearGenerationSelections() {
   document.querySelectorAll('input[name="pgr_sector_ids"], .pgr-risk-check, .pgr-exam-check, .sector-risk-group-check').forEach((box) => {
     box.checked = false;
@@ -492,6 +509,7 @@ function loadReportProfile(profileId) {
   Object.entries(state.selected_risk_ids_by_sector || {}).forEach(([sectorId, riskIds]) => setCheckboxesByName(`sector_risk_ids_${sectorId}`, riskIds));
   Object.entries(state.selected_risk_group_ids_by_sector || {}).forEach(([sectorId, groupIds]) => setCheckboxesByName(`sector_risk_group_ids_${sectorId}`, groupIds));
   Object.entries(state.selected_exam_ids_by_sector || {}).forEach(([sectorId, examIds]) => setCheckboxesByName(`sector_exam_ids_${sectorId}`, examIds));
+  loadAetState(state);
 
   filterProfileOptions();
   syncRevisionField();
@@ -621,7 +639,8 @@ document.querySelectorAll('form').forEach((form) => {
   const navs = Array.from(form.querySelectorAll('[data-step-nav]'));
   if (!stepNodes.length || !navs.length) return;
   let activeStep = Number(sessionStorage.getItem('sstWizardActiveStep') || '1');
-  if (!activeStep || activeStep < 1 || activeStep > 6) activeStep = 1;
+  const maxStep = navs.reduce((max, nav) => Math.max(max, Number(nav.dataset.stepNav || '1')), 1);
+  if (!activeStep || activeStep < 1 || activeStep > maxStep) activeStep = 1;
 
   function showStep(step){
     activeStep = step;
@@ -639,7 +658,7 @@ document.querySelectorAll('form').forEach((form) => {
   }
 
   function addStepControls(){
-    for (let step=1; step<=6; step++) {
+    for (let step=1; step<=maxStep; step++) {
       const panels = stepNodes.filter((node) => Number(node.dataset.wizardStep || '0') === step && node.classList.contains('step-panel'));
       const panel = panels[panels.length-1];
       const content = panel ? panel.querySelector('.step-content') : null;
@@ -655,8 +674,8 @@ document.querySelectorAll('form').forEach((form) => {
       const next = document.createElement('button');
       next.type = 'button';
       next.className = 'btn primary';
-      next.textContent = step === 6 ? 'Conferir e gerar' : 'Próximo';
-      next.addEventListener('click', () => showStep(Math.min(6, step+1)));
+      next.textContent = step === maxStep ? 'Conferir e gerar' : 'Próximo';
+      next.addEventListener('click', () => showStep(Math.min(maxStep, step+1)));
       controls.appendChild(back);
       controls.appendChild(next);
       content.appendChild(controls);
