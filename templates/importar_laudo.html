@@ -99,9 +99,12 @@
         {% endfor %}
       </select>
     </label>
+    <input type="hidden" name="setores_json" value='{{ extracted.get("setores_json", "[]")|e }}'>
+    <input type="hidden" name="riscos_json" value='{{ extracted.get("riscos_json", "[]")|e }}'>
     <label class="span-2">
       <span>Setores encontrados</span>
       <textarea name="setores_extraidos" rows="7" placeholder="Um setor por linha">{{ extracted.get('setores', [])|join('\n') }}</textarea>
+      <small>Quando o arquivo antigo possui tabela de Relação Função x Atividade, os cargos, CBOs, quantidades e descrições são salvos automaticamente junto com estes setores.</small>
     </label>
     <label class="span-2">
       <span>Riscos encontrados ou reconhecidos</span>

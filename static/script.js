@@ -109,6 +109,41 @@ if (ajusteBox) {
   syncRevisionField();
 }
 
+
+function compactGenerationPayload(form) {
+  if (!form || form.dataset.payloadCompacted === '1') return;
+  const selectedSectors = new Set(
+    Array.from(form.querySelectorAll('input[name="pgr_sector_ids"]:checked, input[name="sector_ids"]:checked')).map((input) => input.value)
+  );
+  form.querySelectorAll('[data-sector]').forEach((node) => {
+    const sectorId = node.getAttribute('data-sector');
+    if (!sectorId || selectedSectors.has(sectorId)) return;
+    node.querySelectorAll('input, select, textarea').forEach((field) => {
+      field.dataset.prunedDisabled = '1';
+      field.disabled = true;
+    });
+  });
+  form.querySelectorAll('input[type="text"], input:not([type]), textarea').forEach((field) => {
+    if (field.disabled || field.required) return;
+    const name = field.getAttribute('name') || '';
+    if (!name.startsWith('aet_')) return;
+    if (!String(field.value || '').trim()) {
+      field.dataset.prunedDisabled = '1';
+      field.disabled = true;
+    }
+  });
+  form.dataset.payloadCompacted = '1';
+}
+
+function restoreCompactedPayload(form) {
+  if (!form) return;
+  form.querySelectorAll('[data-pruned-disabled="1"]').forEach((field) => {
+    field.disabled = false;
+    delete field.dataset.prunedDisabled;
+  });
+  delete form.dataset.payloadCompacted;
+}
+
 const pgrForm = document.getElementById('pgrSelectionForm');
 if (pgrForm) {
   pgrForm.addEventListener('submit', (event) => {
@@ -148,6 +183,7 @@ if (pgrForm) {
         return;
       }
     }
+    compactGenerationPayload(pgrForm);
     if (submitter && action.includes('gerar-pgr-aet-psicossocial') && !submitter.dataset.ajaxDownload) {
       submitter.disabled = true;
       submitter.textContent = 'Juntando arquivos... aguarde';
@@ -614,6 +650,7 @@ async function handleAjaxDownload(event, form, submitter, action) {
     setAjaxStatus(form, error.message || 'Erro ao processar arquivo.', 'error');
     alert(error.message || 'Erro ao processar arquivo.');
   } finally {
+    restoreCompactedPayload(form);
     resetFormButtons(form);
   }
 }

@@ -2428,6 +2428,9 @@ def salvar_importacao_laudo_antigo():
                 setattr(company, key, value)
 
     sector_count = 0
+    sector_created_count = 0
+    sector_updated_count = 0
+    cargo_import_count = 0
     # Se houver estrutura com cargos vinda do Word, usa ela. Caso contrário usa uma linha por setor.
     structured_sector_names = set()
     for item in setores_json:
@@ -2452,13 +2455,29 @@ def salvar_importacao_laudo_antigo():
         if not existing:
             db.session.add(Sector(setor=setor_name, group_id=group_id, cargos=cargos))
             sector_count += 1
+            sector_created_count += 1
+            cargo_import_count += len(cargos)
         else:
             if group_id:
                 existing.group_id = group_id
-            # Atualiza cargos apenas se o setor antigo estiver sem cargos úteis.
             old_cargos = existing.cargos or []
+            old_keys = {(_simple_norm(str(c.get("cargo", ""))) + "|" + _simple_norm(str(c.get("cbo", "")))) for c in old_cargos}
+            merged_cargos = list(old_cargos)
+            added_cargo = 0
+            for cargo_item in cargos:
+                cargo_key = _simple_norm(str(cargo_item.get("cargo", ""))) + "|" + _simple_norm(str(cargo_item.get("cbo", "")))
+                if cargo_key not in old_keys:
+                    merged_cargos.append(cargo_item)
+                    old_keys.add(cargo_key)
+                    added_cargo += 1
             if not old_cargos or all(str(c.get("cargo", "")).upper() == "A DEFINIR" for c in old_cargos):
                 existing.cargos = cargos
+                added_cargo = len(cargos)
+            elif added_cargo:
+                existing.cargos = merged_cargos
+            sector_count += 1
+            sector_updated_count += 1
+            cargo_import_count += added_cargo
 
     for line in _unique_clean_lines(setores_text.splitlines()):
         if _simple_norm(line) in structured_sector_names:
@@ -2473,6 +2492,13 @@ def salvar_importacao_laudo_antigo():
                 "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função.",
             }]))
             sector_count += 1
+            sector_created_count += 1
+            cargo_import_count += 1
+        else:
+            if group_id:
+                existing.group_id = group_id
+            sector_count += 1
+            sector_updated_count += 1
 
     detailed_by_name: dict[str, dict[str, str]] = {}
     for item in riscos_json:
@@ -2509,7 +2535,7 @@ def salvar_importacao_laudo_antigo():
             exam_count += 1
 
     db.session.commit()
-    flash(f"Importação salva: empresa {'criada' if company_created else 'atualizada/verificada'}, {sector_count} setor(es), {risk_count} risco(s) e {exam_count} exame(s) novo(s). Revise os cadastros importados antes de gerar laudos.", "success")
+    flash(f"Importação salva: empresa {'criada' if company_created else 'atualizada/verificada'}, {sector_count} setor(es) processado(s) ({sector_created_count} novo(s) e {sector_updated_count} atualizado(s)), {cargo_import_count} cargo(s) importado(s), {risk_count} risco(s) novo(s) e {exam_count} exame(s) novo(s). Revise os cadastros importados antes de gerar laudos.", "success")
     return redirect(url_for("importar_laudo_antigo"))
 
 @app.post("/juntar-arquivos")
