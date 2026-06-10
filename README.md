@@ -107,3 +107,15 @@ A junção PGR + AET + Relatório Psicossocial agora insere o PDF psicossocial c
 - Formulário da AET com opções de seleção por setor, reduzindo preenchimento manual.
 - Presets por CNAE/atividade para pré-marcar respostas de AET, editáveis antes da geração.
 - Plano de ação do PGR agora agrupa o mesmo risco em uma única linha e lista todos os setores na coluna GES.
+
+## Correção V31 - Request Entity Too Large
+
+A versão V31 aumenta os limites internos do Flask/Werkzeug para formulários grandes da tela Gerar Laudos.
+
+Variáveis opcionais no Render:
+
+- `MAX_UPLOAD_MB=120`
+- `MAX_FORM_MEMORY_MB=80`
+- `MAX_FORM_PARTS=50000`
+
+Use `MAX_FORM_MEMORY_MB` maior se houver muitas empresas/setores/riscos/exames/AET no mesmo envio.

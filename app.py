@@ -13,6 +13,7 @@ from typing import Any
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import RequestEntityTooLarge
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Text, inspect, text
 
@@ -70,6 +71,10 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 # Evita uploads gigantes travarem o serviço no Render. Ajuste por variável de ambiente se precisar.
 app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "120")) * 1024 * 1024
+# A tela Gerar Laudos envia muitos campos quando há muitos setores, riscos, exames e dados de AET.
+# Sem estes limites maiores, o Werkzeug pode retornar: Request Entity Too Large.
+app.config["MAX_FORM_MEMORY_SIZE"] = int(os.environ.get("MAX_FORM_MEMORY_MB", "80")) * 1024 * 1024
+app.config["MAX_FORM_PARTS"] = int(os.environ.get("MAX_FORM_PARTS", "50000"))
 
 # Configuração da conversão visual do PDF psicossocial para Word.
 # Usamos JPEG em DPI moderado para preservar o visual sem travar por arquivos enormes.
@@ -78,6 +83,15 @@ PSICOSSOCIAL_JPEG_QUALITY = max(60, min(92, int(os.environ.get("PSICOSSOCIAL_JPE
 PSICOSSOCIAL_MAX_PAGES = int(os.environ.get("PSICOSSOCIAL_MAX_PAGES", "80"))
 
 db = SQLAlchemy(app)
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(error):
+    flash(
+        "O formulário ou arquivo enviado ficou maior que o limite configurado. "
+        "Tente gerar novamente. Se estiver juntando arquivos, reduza o PDF ou aumente MAX_UPLOAD_MB/MAX_FORM_MEMORY_MB no Render.",
+        "error",
+    )
+    return redirect(request.referrer or url_for("generate"))
 
 
 risk_group_items = db.Table(
