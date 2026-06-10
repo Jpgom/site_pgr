@@ -1387,16 +1387,190 @@ def _prepare_link_docx(template_path: Path, output_path: Path, empresa: str, dat
     return output_path
 
 
-def _convert_pdf_to_docx(pdf_path: Path, output_docx: Path) -> Path:
+def _clear_header_footer_part(part) -> None:
+    """Remove cabeçalho/rodapé herdado ao inserir anexos no Word final."""
     try:
-        from pdf2docx import Converter
+        part.is_linked_to_previous = False
+    except Exception:
+        pass
+    element = getattr(part, "_element", None)
+    if element is not None:
+        for child in list(element):
+            element.remove(child)
+    try:
+        part.add_paragraph()
+    except Exception:
+        pass
+
+
+def _clear_section_headers_footers(section) -> None:
+    try:
+        section.different_first_page_header_footer = True
+    except Exception:
+        pass
+    for part in [
+        section.header,
+        section.footer,
+        section.first_page_header,
+        section.first_page_footer,
+        section.even_page_header,
+        section.even_page_footer,
+    ]:
+        _clear_header_footer_part(part)
+
+
+def _render_pdf_pages_to_docx_body(doc, pdf_path: Path, images_dir: Path) -> None:
+    """Insere as páginas do PDF como imagens no corpo do DOCX atual.
+
+    Usado para preservar o relatório psicossocial exatamente como o PDF.
+    """
+    try:
+        import fitz  # PyMuPDF
+        from docx.shared import Inches, Pt
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
     except Exception as exc:  # pragma: no cover
-        raise RuntimeError("A biblioteca pdf2docx não está instalada. Verifique o requirements.txt no Render.") from exc
-    converter = Converter(str(pdf_path))
+        raise RuntimeError("A biblioteca PyMuPDF/python-docx não está instalada. Verifique o requirements.txt no Render.") from exc
+
+    images_dir.mkdir(parents=True, exist_ok=True)
+    pdf = fitz.open(str(pdf_path))
+    if pdf.page_count == 0:
+        raise ValueError("O PDF do Relatório Psicossocial não possui páginas.")
+
+    first_rect = pdf[0].rect
+    section = doc.sections[-1]
+    page_margin = 0.05
+    section.page_width = Inches(first_rect.width / 72)
+    section.page_height = Inches(first_rect.height / 72)
+    section.top_margin = Inches(page_margin)
+    section.bottom_margin = Inches(page_margin)
+    section.left_margin = Inches(page_margin)
+    section.right_margin = Inches(page_margin)
+    section.header_distance = Inches(0)
+    section.footer_distance = Inches(0)
+    _clear_section_headers_footers(section)
+
+    zoom = 200 / 72
+    matrix = fitz.Matrix(zoom, zoom)
+
     try:
-        converter.convert(str(output_docx), start=0, end=None)
+        for page_index in range(pdf.page_count):
+            page = pdf[page_index]
+            image_path = images_dir / f"pagina_{page_index + 1:03d}.png"
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            pix.save(str(image_path))
+
+            paragraph = doc.add_paragraph()
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(0)
+            paragraph.paragraph_format.line_spacing = 1
+            run = paragraph.add_run()
+
+            rect = page.rect
+            max_width_in = (first_rect.width / 72) - (page_margin * 2)
+            max_height_in = (first_rect.height / 72) - (page_margin * 2) - 0.03
+            width_in = rect.width / 72 if rect.width else max_width_in
+            height_in = rect.height / 72 if rect.height else max_height_in
+            scale = min(max_width_in / width_in, max_height_in / height_in, 1)
+            run.add_picture(str(image_path), width=Inches(width_in * scale))
     finally:
-        converter.close()
+        pdf.close()
+
+
+def _append_pdf_as_images_to_docx(base_docx: Path, pdf_path: Path, output_docx: Path) -> Path:
+    try:
+        from docx import Document
+        from docx.enum.section import WD_SECTION
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("A biblioteca python-docx não está instalada. Verifique o requirements.txt no Render.") from exc
+
+    doc = Document(str(base_docx))
+    doc.add_section(WD_SECTION.NEW_PAGE)
+    images_dir = output_docx.parent / f"{output_docx.stem}_psicossocial_paginas"
+    _render_pdf_pages_to_docx_body(doc, pdf_path, images_dir)
+    output_docx.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_docx))
+    return output_docx
+
+
+def _convert_pdf_to_docx(pdf_path: Path, output_docx: Path) -> Path:
+    """Converte PDF para DOCX preservando o visual de cada página.
+
+    A conversão antiga por extração de texto/tabelas quebrava o layout dos
+    relatórios psicossociais, criando sobreposições, faixas pretas e tabelas
+    deformadas. Para documentos que precisam apenas ser anexados ao Word final,
+    a forma mais fiel é rasterizar cada página do PDF e inserir a página inteira
+    como imagem em um DOCX. O conteúdo fica não editável, mas visualmente igual
+    ao PDF original.
+    """
+    try:
+        import fitz  # PyMuPDF
+        from docx import Document
+        from docx.shared import Inches, Pt
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("A biblioteca PyMuPDF/python-docx não está instalada. Verifique o requirements.txt no Render.") from exc
+
+    output_docx.parent.mkdir(parents=True, exist_ok=True)
+    images_dir = output_docx.parent / f"{output_docx.stem}_paginas"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    pdf = fitz.open(str(pdf_path))
+    if pdf.page_count == 0:
+        raise ValueError("O PDF do Relatório Psicossocial não possui páginas.")
+
+    doc = Document()
+    section = doc.sections[0]
+
+    # Usa o tamanho real da primeira página do PDF. A maioria dos relatórios
+    # psicossociais é gerada em tamanho único.
+    first_rect = pdf[0].rect
+    page_width = Inches(first_rect.width / 72)
+    page_height = Inches(first_rect.height / 72)
+    section.page_width = page_width
+    section.page_height = page_height
+    # Margem mínima para evitar que o Word crie páginas em branco por causa
+    # da altura da imagem somada ao parágrafo. O PDF já possui suas próprias
+    # margens visuais, então essa redução não altera a aparência do conteúdo.
+    page_margin = 0.05
+    section.top_margin = Inches(page_margin)
+    section.bottom_margin = Inches(page_margin)
+    section.left_margin = Inches(page_margin)
+    section.right_margin = Inches(page_margin)
+    section.header_distance = Inches(0)
+    section.footer_distance = Inches(0)
+    _clear_section_headers_footers(section)
+
+    # 200 dpi é um bom equilíbrio entre fidelidade visual e tamanho do arquivo.
+    zoom = 200 / 72
+    matrix = fitz.Matrix(zoom, zoom)
+
+    try:
+        for page_index in range(pdf.page_count):
+            page = pdf[page_index]
+            image_path = images_dir / f"pagina_{page_index + 1:03d}.png"
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            pix.save(str(image_path))
+
+            paragraph = doc.add_paragraph()
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(0)
+            paragraph.paragraph_format.line_spacing = 1
+            run = paragraph.add_run()
+
+            # Ajusta pelo tamanho útil da página. A pequena redução evita páginas
+            # em branco causadas pelo parágrafo que o Word mantém após imagens.
+            rect = page.rect
+            max_width_in = (first_rect.width / 72) - (page_margin * 2)
+            max_height_in = (first_rect.height / 72) - (page_margin * 2) - 0.03
+            width_in = rect.width / 72 if rect.width else max_width_in
+            height_in = rect.height / 72 if rect.height else max_height_in
+            scale = min(max_width_in / width_in, max_height_in / height_in, 1)
+            run.add_picture(str(image_path), width=Inches(width_in * scale))
+
+    finally:
+        pdf.close()
+
+    doc.save(str(output_docx))
     return output_docx
 
 
@@ -1436,13 +1610,18 @@ def _save_uploaded_file(file_storage, folder: Path, allowed_exts: set[str], labe
 def _build_combined_pgr_aet_psychosocial(pgr_docx: Path, aet_docx: Path, psicossocial_pdf: Path, output_path: Path, empresa: str, data_criacao: str, mes_extenso: str | None = None) -> Path:
     workdir = output_path.parent / f"merge_{uuid.uuid4().hex}"
     workdir.mkdir(parents=True, exist_ok=True)
-    psicossocial_docx = workdir / "relatorio_psicossocial_convertido.docx"
     link_pgr = workdir / "link_pgr_para_aet.docx"
     link_aet = workdir / "link_aet_para_psicossocial.docx"
-    _convert_pdf_to_docx(psicossocial_pdf, psicossocial_docx)
+    merged_without_psy = workdir / "pgr_aet_links.docx"
+
     _prepare_link_docx(LINK_PGR_AET_TEMPLATE, link_pgr, empresa, data_criacao, mes_extenso)
     _prepare_link_docx(LINK_AET_PSICOSSOCIAL_TEMPLATE, link_aet, empresa, data_criacao, mes_extenso)
-    return _merge_docx_files([pgr_docx, link_pgr, aet_docx, link_aet, psicossocial_docx], output_path)
+
+    # Primeiro junta os arquivos editáveis. Depois adiciona o Relatório
+    # Psicossocial como páginas-imagem em uma nova seção sem cabeçalho/rodapé.
+    # Isso evita as distorções geradas por conversão PDF -> DOCX por texto.
+    _merge_docx_files([pgr_docx, link_pgr, aet_docx, link_aet], merged_without_psy)
+    return _append_pdf_as_images_to_docx(merged_without_psy, psicossocial_pdf, output_path)
 def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     today = datetime.now().strftime("%m/%Y")
     next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")

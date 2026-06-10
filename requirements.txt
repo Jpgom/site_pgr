@@ -6,6 +6,7 @@ gunicorn==22.0.0
 psycopg[binary]==3.3.4
 openpyxl==3.1.5
 docxcompose==1.4.0
+PyMuPDF==1.26.7
 pdf2docx==0.5.8
 
 setuptools==75.8.0

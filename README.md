@@ -69,3 +69,8 @@ O banco existente é preservado. As novas tabelas/colunas são criadas automatic
 - Ao marcar um grupo, todos os riscos daquele grupo são selecionados automaticamente para o setor.
 - Mesmo usando um grupo, ainda é possível marcar riscos isolados ou desmarcar riscos específicos.
 - A LTCAT continua automática: usa apenas os riscos ambientais selecionados no setor, ou seja, FÍSICO, QUÍMICO e BIOLÓGICO.
+
+
+## V23 - Relatório Psicossocial preservado no Word
+
+A junção PGR + AET + Relatório Psicossocial agora insere o PDF psicossocial como páginas-imagem dentro do DOCX final. Essa abordagem evita as quebras de layout da conversão PDF -> Word por texto/tabelas, preservando gráficos, tabelas, cores e espaçamentos exatamente como no PDF original. O conteúdo do psicossocial fica visualmente fiel, porém não editável como texto.
