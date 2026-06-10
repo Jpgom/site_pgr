@@ -338,6 +338,115 @@ FORM_OPTIONS = {
 
 TIPOS_RISCO_LTCAT = {"FÍSICO", "QUÍMICO", "BIOLÓGICO"}
 
+# Presets técnicos de AET por CNAE/atividade.
+# Usados apenas para pré-marcar o formulário; o usuário pode alterar tudo antes de gerar.
+AET_CNAE_PRESETS = [
+    {
+        "keywords": ["47.81", "vestuário", "vestuario", "comércio varejista", "loja", "vendas"],
+        "label": "Comércio varejista / vestuário",
+        "general": {
+            "tipo_documento": "AET completa com formulário ergonômico",
+            "motivo_analise": "Atendimento à NR-17 e integração com o PGR",
+            "condicao_ergonomica_geral": "Adequada com recomendações",
+        },
+        "sector": {
+            "postura": ["Em pé", "Deslocamento frequente", "Alternado"],
+            "tipo_atividade": "Atendimento, organização de mercadorias e apoio operacional",
+            "exigencia_fisica": "Moderada",
+            "exigencia_cognitiva": "Moderada",
+            "ritmo_trabalho": "Por demanda e fluxo de clientes",
+            "pausas": "Intervalos legais e pausas breves conforme organização da loja",
+            "mobiliario": "Parcialmente adequado",
+            "ambiente": "A avaliar conforto térmico, iluminação e circulação",
+            "organizacao": "Atendimento ao público, organização de prioridades e comunicação com liderança",
+            "equipamentos": "Balcão, prateleiras, araras, computador/sistema e materiais de apoio",
+            "fatores": ["Atendimento ao público", "Deslocamentos no setor", "Postura em pé", "Organização de demandas"],
+            "medidas": ["Alternância postural", "Pausas breves", "Organização do posto", "Orientação NR-17"],
+            "prioridade": "Média",
+            "prazo": "30 dias",
+            "responsavel": "Empresa / Administração",
+        },
+    },
+    {
+        "keywords": ["81.21", "81.22", "81.29", "limpeza", "serviços combinados", "servicos combinados", "serviços gerais", "servicos gerais"],
+        "label": "Limpeza / serviços gerais",
+        "general": {
+            "tipo_documento": "AET completa com formulário ergonômico",
+            "motivo_analise": "Atendimento à NR-17 e avaliação das exigências físicas das atividades",
+            "condicao_ergonomica_geral": "Adequada com recomendações",
+        },
+        "sector": {
+            "postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"],
+            "tipo_atividade": "Limpeza, conservação, deslocamento e manuseio de materiais",
+            "exigencia_fisica": "Moderada",
+            "exigencia_cognitiva": "Baixa",
+            "ritmo_trabalho": "Por rotina e demandas do ambiente",
+            "pausas": "Pausas e alternância conforme intensidade da atividade",
+            "mobiliario": "Não aplicável diretamente; avaliar equipamentos e ferramentas manuais",
+            "ambiente": "A avaliar piso, circulação, ventilação e disponibilidade de local para descanso",
+            "organizacao": "Rotina operacional com definição clara de prioridades",
+            "equipamentos": "Vassouras, rodos, baldes, panos, produtos saneantes e carrinhos quando disponíveis",
+            "fatores": ["Esforço físico", "Posturas incômodas", "Deslocamentos frequentes", "Manuseio de materiais"],
+            "medidas": ["Alternância de tarefas", "Pausas", "Ferramentas adequadas", "Orientação NR-17"],
+            "prioridade": "Média",
+            "prazo": "30 dias",
+            "responsavel": "Empresa / Administração",
+        },
+    },
+    {
+        "keywords": ["administrativo", "escritório", "escritorio", "82.", "69.", "70."],
+        "label": "Administrativo / escritório",
+        "general": {
+            "tipo_documento": "AET documental com análise por setor",
+            "motivo_analise": "Atendimento à NR-17 e análise do posto administrativo",
+            "condicao_ergonomica_geral": "Adequada com recomendações",
+        },
+        "sector": {
+            "postura": ["Sentado", "Alternado"],
+            "tipo_atividade": "Atividades administrativas, digitação, atendimento e organização documental",
+            "exigencia_fisica": "Baixa",
+            "exigencia_cognitiva": "Moderada",
+            "ritmo_trabalho": "Por demanda administrativa",
+            "pausas": "Pausas breves e alternância postural recomendadas",
+            "mobiliario": "A avaliar cadeira, mesa, monitor e acessórios",
+            "ambiente": "A avaliar iluminação, reflexos, ventilação e conforto acústico",
+            "organizacao": "Rotina administrativa com atenção a prazos, prioridades e comunicação",
+            "equipamentos": "Computador, monitor, teclado, mouse, telefone e documentos",
+            "fatores": ["Trabalho sentado", "Digitação", "Atenção contínua", "Organização de prioridades"],
+            "medidas": ["Ajuste de mobiliário", "Alternância postural", "Pausas visuais", "Orientação NR-17"],
+            "prioridade": "Baixa",
+            "prazo": "60 dias",
+            "responsavel": "Empresa / Administração",
+        },
+    },
+    {
+        "keywords": ["portaria", "porteiro", "vigilância", "vigilancia", "condomínio", "condominio", "81.12"],
+        "label": "Portaria / condomínio",
+        "general": {
+            "tipo_documento": "AET completa com formulário ergonômico",
+            "motivo_analise": "Atendimento à NR-17 e análise de atividade com atenção contínua",
+            "condicao_ergonomica_geral": "Adequada com recomendações",
+        },
+        "sector": {
+            "postura": ["Sentado", "Em pé", "Alternado"],
+            "tipo_atividade": "Controle de acesso, atendimento, monitoramento e comunicação",
+            "exigencia_fisica": "Baixa",
+            "exigencia_cognitiva": "Elevada",
+            "ritmo_trabalho": "Contínuo, com atenção permanente e demandas variáveis",
+            "pausas": "Pausas conforme escala, mantendo cobertura operacional",
+            "mobiliario": "A avaliar cadeira, bancada, campo visual e acesso aos controles",
+            "ambiente": "A avaliar ventilação, iluminação, conforto térmico e ruído",
+            "organizacao": "Atenção constante, comunicação e controle de prioridades",
+            "equipamentos": "Portão, interfone, rádio/telefone, computador, câmeras e controles",
+            "fatores": ["Atenção contínua", "Atendimento ao público", "Comunicação", "Postura alternada"],
+            "medidas": ["Ajuste do posto", "Pausas", "Definição de procedimentos", "Orientação NR-17"],
+            "prioridade": "Média",
+            "prazo": "30 dias",
+            "responsavel": "Empresa / Administração",
+        },
+    },
+]
+
 # Motor simples de regras técnicas para sugestão de exames por risco.
 # O sistema não trava a geração; ele apenas marca/sugere exames já cadastrados
 # quando o nome do exame combina com palavras-chave.
@@ -1447,25 +1556,40 @@ def _aet_form_data_from_request() -> dict[str, Any]:
     """
     sector_ids = request.form.getlist("pgr_sector_ids")
     general = {
-        "tipo_aet": _field("aet_tipo") or "AET documental com análise por setor",
+        "tipo_aet": _field("aet_tipo") or "AET completa com formulário ergonômico",
+        "tipo_documento": _field("aet_tipo_documento") or _field("aet_tipo") or "AET - Análise Ergonômica do Trabalho",
+        "motivo_analise": _field("aet_motivo_analise") or "Atendimento à NR-17 e integração com o PGR",
         "responsavel_tecnico": _field("aet_responsavel_tecnico"),
         "metodologia": request.form.getlist("aet_metodologia"),
+        "origem_dados": request.form.getlist("aet_origem_dados"),
         "objetivo_complementar": _field("aet_objetivo_complementar"),
         "criterios_analise": _field("aet_criterios_analise"),
+        "limitacoes_analise": _field("aet_limitacoes_analise"),
+        "condicao_ergonomica_geral": _field("aet_condicao_ergonomica_geral"),
         "conclusao_geral_manual": _field("aet_conclusao_geral"),
     }
     by_sector: dict[str, Any] = {}
     for sector_id in sector_ids:
         by_sector[sector_id] = {
             "postura_predominante": request.form.getlist(f"aet_postura_{sector_id}"),
+            "tipo_atividade": _field(f"aet_tipo_atividade_{sector_id}"),
             "exigencia_fisica": _field(f"aet_exigencia_fisica_{sector_id}"),
             "exigencia_cognitiva": _field(f"aet_exigencia_cognitiva_{sector_id}"),
+            "levantamento_cargas": _field(f"aet_levantamento_cargas_{sector_id}"),
+            "movimentos_repetitivos": _field(f"aet_movimentos_repetitivos_{sector_id}"),
+            "atencao_concentracao": _field(f"aet_atencao_concentracao_{sector_id}"),
+            "atendimento_publico": _field(f"aet_atendimento_publico_{sector_id}"),
+            "autonomia": _field(f"aet_autonomia_{sector_id}"),
+            "metas_prioridades": _field(f"aet_metas_prioridades_{sector_id}"),
+            "comunicacao": _field(f"aet_comunicacao_{sector_id}"),
             "ritmo_trabalho": _field(f"aet_ritmo_trabalho_{sector_id}"),
             "pausas": _field(f"aet_pausas_{sector_id}"),
             "mobiliario": _field(f"aet_mobiliario_{sector_id}"),
             "ambiente": _field(f"aet_ambiente_{sector_id}"),
             "organizacao": _field(f"aet_organizacao_{sector_id}"),
             "equipamentos": _field(f"aet_equipamentos_{sector_id}"),
+            "fatores_organizacionais": request.form.getlist(f"aet_fatores_organizacionais_{sector_id}"),
+            "medidas_recomendadas": request.form.getlist(f"aet_medidas_recomendadas_{sector_id}"),
             "queixas": _field(f"aet_queixas_{sector_id}"),
             "observacoes": _field(f"aet_observacoes_{sector_id}"),
             "recomendacoes": _field(f"aet_recomendacoes_{sector_id}"),
@@ -1921,6 +2045,7 @@ def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "groups": _sorted_groups(),
         "grouped_sectors": _grouped_sectors(),
         "companies": _sorted_companies(),
+        "aet_presets": AET_CNAE_PRESETS,
         "report_profiles": _sorted_report_profiles(),
         "options": FORM_OPTIONS,
         "today": today,

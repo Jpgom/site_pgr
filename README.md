@@ -100,3 +100,10 @@ A junção PGR + AET + Relatório Psicossocial agora insere o PDF psicossocial c
 - Tela de geração em etapas: wizard com barra lateral de progresso para Empresa, Dados, Setores, Riscos, Exames e Gerar.
 - Motor de regras de exames: botão para sugerir exames automaticamente conforme riscos selecionados por setor.
 - Pacote ZIP da empresa: gera PGR, PCMSO, LTCAT, AET e resumo da geração em um único ZIP.
+
+## V28 - AET técnica e plano de ação agrupado
+
+- AET com campos técnicos adicionais: tipo de documento, motivo da análise, condição ergonômica geral, fontes de dados, limitações da análise e diagnóstico por setor.
+- Formulário da AET com opções de seleção por setor, reduzindo preenchimento manual.
+- Presets por CNAE/atividade para pré-marcar respostas de AET, editáveis antes da geração.
+- Plano de ação do PGR agora agrupa o mesmo risco em uma única linha e lista todos os setores na coluna GES.

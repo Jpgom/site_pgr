@@ -122,3 +122,25 @@ body.modal-open{overflow:hidden}
 @media (max-width: 780px){
   .aet-sector-picker summary small{white-space:normal;}
 }
+
+/* V28 - AET técnica com presets e formulário compacto */
+.aet-preset-box{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 14px;
+  border:1px solid var(--line, #e6e8ee);
+  border-radius:14px;
+  background:linear-gradient(180deg, #ffffff, #fafafa);
+  margin:10px 0 14px;
+}
+.aet-preset-box p{margin:2px 0 0;}
+#aetPresetStatus.is-ready{background:#e9f7ef;color:#0f6b38;border-color:#bee7cd;}
+.mini-heading{font-size:0.95rem;margin:16px 0 8px;color:#2f3747;}
+.compact-methods{margin-top:8px;}
+.aet-sector-body .three-cols{grid-template-columns:repeat(3,minmax(0,1fr));}
+@media (max-width:900px){
+  .aet-preset-box{align-items:flex-start;flex-direction:column;}
+  .aet-sector-body .three-cols{grid-template-columns:1fr;}
+}

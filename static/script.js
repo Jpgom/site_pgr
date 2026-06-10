@@ -726,3 +726,100 @@ if (suggestExamsBtn && pgrForm) {
     }
   });
 }
+
+// V28 - pré-preenchimento técnico do formulário AET por CNAE/atividade
+(function initAetCnaePresets(){
+  const presetEl = document.getElementById('aetPresetsData');
+  const companiesEl = document.getElementById('companiesData');
+  const button = document.getElementById('applyAetPresetBtn');
+  const status = document.getElementById('aetPresetStatus');
+  const companySelect = document.getElementById('companySelect');
+  const form = document.getElementById('pgrSelectionForm');
+  if (!presetEl || !companiesEl || !button || !companySelect || !form) return;
+
+  let presets = [];
+  let companies = [];
+  try { presets = JSON.parse(presetEl.textContent || '[]'); } catch (_) { presets = []; }
+  try { companies = JSON.parse(companiesEl.textContent || '[]'); } catch (_) { companies = []; }
+
+  function norm(value){
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  }
+  function selectedCompany(){
+    const id = companySelect.value;
+    return companies.find((item) => item.id === id) || null;
+  }
+  function findPreset(){
+    const company = selectedCompany();
+    if (!company) return null;
+    const haystack = norm([company.cnae1, company.cnae2, company.descricao1, company.descricao2, company.nome].join(' '));
+    return presets.find((preset) => (preset.keywords || []).some((kw) => haystack.includes(norm(kw)))) || null;
+  }
+  function updateStatus(){
+    const preset = findPreset();
+    if (!status) return;
+    status.textContent = preset ? `Sugestão: ${preset.label}` : 'Sem preset específico';
+    status.classList.toggle('is-ready', !!preset);
+  }
+  function setField(selector, value, onlyIfEmpty=false){
+    const field = form.querySelector(selector);
+    if (!field || value === undefined || value === null || value === '') return;
+    if (onlyIfEmpty && field.value) return;
+    field.value = value;
+    field.dispatchEvent(new Event('change', {bubbles:true}));
+  }
+  function setGeneral(preset){
+    const general = preset.general || {};
+    Object.entries(general).forEach(([key, value]) => {
+      setField(`[data-aet-general="${CSS.escape(key)}"]`, value);
+    });
+    if (general.tipo_documento) setField('[name="aet_tipo"]', general.tipo_documento);
+  }
+  function setSectorSelect(sectorEl, key, value){
+    if (value === undefined || value === null || value === '') return;
+    const field = sectorEl.querySelector(`[data-aet-sector="${CSS.escape(key)}"]`);
+    if (field) {
+      field.value = value;
+      field.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+  }
+  function setSectorTextFieldByName(sectorEl, suffix, value){
+    if (!value) return;
+    const field = sectorEl.querySelector(`input[name^="aet_${suffix}_"], textarea[name^="aet_${suffix}_"]`);
+    if (field) field.value = value;
+  }
+  function setSectorChecks(sectorEl, attr, values){
+    const wanted = new Set((values || []).map(String));
+    if (!wanted.size) return;
+    sectorEl.querySelectorAll(`input[data-aet-sector-list="${attr}"]`).forEach((box) => {
+      box.checked = wanted.has(box.value);
+    });
+  }
+  function setPostures(sectorEl, values){
+    const wanted = new Set((values || []).map(String));
+    if (!wanted.size) return;
+    sectorEl.querySelectorAll('input[name^="aet_postura_"]').forEach((box) => { box.checked = wanted.has(box.value); });
+  }
+  function applyPreset(){
+    const preset = findPreset();
+    if (!preset) {
+      alert('Não encontrei um preset específico para o CNAE/atividade dessa empresa. Você ainda pode preencher manualmente.');
+      return;
+    }
+    setGeneral(preset);
+    const sectorPreset = preset.sector || {};
+    document.querySelectorAll('.aet-sector-picker').forEach((sectorEl) => {
+      if (sectorEl.style.display === 'none') return;
+      setPostures(sectorEl, sectorPreset.postura || []);
+      ['tipo_atividade','exigencia_fisica','exigencia_cognitiva','prioridade'].forEach((key) => setSectorSelect(sectorEl, key, sectorPreset[key]));
+      ['ritmo_trabalho','pausas','mobiliario','ambiente','organizacao','equipamentos','prazo','responsavel'].forEach((key) => setSectorSelect(sectorEl, key, sectorPreset[key]));
+      setSectorChecks(sectorEl, 'fatores', sectorPreset.fatores || []);
+      setSectorChecks(sectorEl, 'medidas', sectorPreset.medidas || []);
+    });
+    if (status) status.textContent = `Aplicado: ${preset.label}`;
+    alert(`Sugestões aplicadas para: ${preset.label}. Revise os campos antes de gerar a AET.`);
+  }
+  companySelect.addEventListener('change', updateStatus);
+  button.addEventListener('click', applyPreset);
+  updateStatus();
+})();

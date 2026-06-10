@@ -9,7 +9,7 @@ from docx import Document
 from docx.table import Table
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import RGBColor
+from docx.shared import RGBColor, Pt
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -243,13 +243,32 @@ def _fill_plano_row(row_xml, risk: Mapping[str, Any], setor: str = "", data_atua
 
 
 def _plano_entries_from_groups_or_risks(items: list[Mapping[str, Any]]) -> list[tuple[str, Mapping[str, Any]]]:
-    """Converte a seleção em linhas de Plano de Ação: (setor, risco)."""
+    """Converte a seleção em linhas de Plano de Ação: (GES, risco).
+
+    Quando o mesmo risco aparece em mais de um setor, o plano de ação deve
+    gerar uma única linha para o risco e colocar todos os setores na coluna GES.
+    Isso deixa o PGR mais limpo e evita várias linhas repetidas mudando apenas
+    o setor.
+    """
     if _is_grouped_payload(items):
-        entries: list[tuple[str, Mapping[str, Any]]] = []
+        grouped: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
         for group in _sanitize_sector_risk_groups(items):
-            setor = group["sector"].get("setor", "")
+            setor = str(group["sector"].get("setor", "")).strip()
             for risk in group.get("risks", []):
-                entries.append((setor, risk))
+                risk_key = str(risk.get("id") or risk.get("risco") or "").strip().lower()
+                if not risk_key:
+                    continue
+                if risk_key not in grouped:
+                    grouped[risk_key] = {"risk": risk, "setores": []}
+                    order.append(risk_key)
+                if setor and setor not in grouped[risk_key]["setores"]:
+                    grouped[risk_key]["setores"].append(setor)
+        entries: list[tuple[str, Mapping[str, Any]]] = []
+        for key in order:
+            setores = sorted(grouped[key]["setores"], key=lambda value: value.lower())
+            ges = "\n".join(setores)
+            entries.append((ges, grouped[key]["risk"]))
         return entries
     return [("", risk) for risk in items]
 
@@ -289,6 +308,18 @@ def generate_action_plan_docx(groups_or_risks: Iterable[Mapping[str, Any]], outp
         new_row = deepcopy(template_row_copy)
         _fill_plano_row(new_row, risk, setor=setor, data_atual=data_atual, data_final=data_final)
         table._tbl.append(new_row)
+
+    # Padroniza a visualização da coluna GES e demais células do plano.
+    # Os setores agrupados ficam um abaixo do outro, em Arial Narrow, sem ocupar várias linhas repetidas.
+    for row in table.rows:
+        for cell_index, cell in enumerate(row.cells):
+            for paragraph in cell.paragraphs:
+                paragraph.paragraph_format.space_after = Pt(0)
+                for run in paragraph.runs:
+                    run.font.name = "Arial Narrow"
+                    run.font.size = Pt(8 if cell_index == 0 else 7)
+                    if cell_index == 0 and row is not table.rows[0]:
+                        run.bold = True
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -393,6 +424,10 @@ def _fill_pgr_sector_table(table_xml, sector: Mapping[str, Any], risks: list[Map
     if has_psychosocial:
         # A frase "NENHUM FATOR..." só aparece quando NÃO houver risco psicossocial no setor.
         table_xml.remove(footer_first_row)
+    else:
+        # Quando a frase aparecer, ela deve ser a última linha da tabela, não antes das linhas finais.
+        table_xml.remove(footer_first_row)
+        table_xml.append(footer_first_row)
 
 
 def generate_pgr_docx(groups_or_risks: Iterable[Mapping[str, Any]], output_path: str | Path) -> Path:
@@ -1122,7 +1157,11 @@ def _fill_pcmso_riscos_sector_table(table_xml, sector: Mapping[str, Any], risks:
 
     has_psychosocial = any(_normalize_option(risk.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for risk in risks)
     # A frase fica somente quando NÃO existe risco ERGONÔMICO PSICOSSOCIAL no setor.
+    # Quando existir, ela é removida; quando não existir, ela é movida para ser a última linha da tabela.
+    keep_phrase_row = not has_psychosocial
     if has_psychosocial:
+        table_xml.remove(phrase_row)
+    else:
         table_xml.remove(phrase_row)
 
     rows = table_xml.findall(qn("w:tr"))
@@ -1144,6 +1183,9 @@ def _fill_pcmso_riscos_sector_table(table_xml, sector: Mapping[str, Any], risks:
         _fill_pcmso_exam_row(row, exam)
         table_xml.insert(insert_index, row)
         insert_index += 1
+
+    if keep_phrase_row:
+        table_xml.append(phrase_row)
 
 
 def _build_pcmso_riscos_elements(template_table_xml, groups: list[Mapping[str, Any]], page_break_between_sectors: bool = True) -> list:
@@ -1840,6 +1882,29 @@ def _aet_auto_sector_conclusion(sector_name: str, risks: list[Mapping[str, Any]]
     return f"No setor {sector_name}, não foram selecionados fatores ergonômicos ou psicossociais específicos no momento da geração, recomendando-se manutenção do acompanhamento das condições de trabalho."
 
 
+
+def _aet_sector_diagnostic(sector_name: str, risks: list[Mapping[str, Any]], data: Mapping[str, Any]) -> str:
+    """Gera diagnóstico técnico sintético do setor para a AET."""
+    postura = _aet_list_text(data.get("postura_predominante"), "postura não definida")
+    exig_f = str(data.get("exigencia_fisica") or "a definir").lower()
+    exig_c = str(data.get("exigencia_cognitiva") or "a definir").lower()
+    atividade = str(data.get("tipo_atividade") or "atividade informada no cadastro de cargos").strip()
+    fatores = _aet_list_text(data.get("fatores_organizacionais"), "fatores organizacionais não detalhados")
+    has_psy = any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for r in risks)
+    has_erg = any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO" for r in risks)
+    base = (
+        f"O setor {sector_name} apresenta atividade predominante de {atividade}, com postura predominante: {postura}. "
+        f"A exigência física foi classificada como {exig_f} e a exigência cognitiva como {exig_c}. "
+        f"Foram considerados os seguintes fatores organizacionais: {fatores}."
+    )
+    if has_psy and has_erg:
+        return base + " A análise indica necessidade de acompanhamento integrado dos fatores biomecânicos, organizacionais e psicossociais, com implantação das recomendações previstas nesta AET."
+    if has_psy:
+        return base + " A análise indica atenção aos aspectos de organização do trabalho, comunicação, autonomia, demandas e relações laborais, com acompanhamento preventivo dos fatores psicossociais."
+    if has_erg:
+        return base + " A análise indica necessidade de controle dos fatores ergonômicos relacionados à postura, ritmo, repetitividade, mobiliário, ferramentas e organização da atividade."
+    return base + " Não foram selecionados fatores ergonômicos específicos, recomendando-se manutenção das boas práticas e reavaliação em caso de alterações do processo ou surgimento de queixas."
+
 def _aet_priority_from_risks(risks: list[Mapping[str, Any]], manual: str = "") -> str:
     if manual:
         return manual
@@ -2049,6 +2114,13 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
     responsavel = str(general.get("responsavel_tecnico", "") or "Responsável técnico a definir pela clínica").strip()
     add_text(f"O presente documento foi elaborado com base nas informações fornecidas pela empresa, nos setores e cargos cadastrados, nos riscos ergonômicos e psicossociais selecionados no sistema e nos dados complementares preenchidos no formulário de AET. Responsável técnico: {responsavel}.")
 
+    add_heading("CARACTERIZAÇÃO DO DOCUMENTO")
+    add_kv_table([
+        ("Tipo de documento", general.get("tipo_documento") or general.get("tipo_aet") or "AET - Análise Ergonômica do Trabalho"),
+        ("Motivo da análise", general.get("motivo_analise") or "Atendimento à NR-17 e integração com o PGR"),
+        ("Condição ergonômica geral", general.get("condicao_ergonomica_geral") or "Adequada com recomendações"),
+    ])
+
     add_heading("OBJETIVO")
     objetivo_extra = str(general.get("objetivo_complementar", "") or "").strip()
     add_text("A presente Análise Ergonômica do Trabalho tem por objetivo avaliar as condições de trabalho, considerando aspectos relacionados à organização do trabalho, exigências físicas, cognitivas, biomecânicas, ambientais e psicossociais, visando propor medidas de adequação, prevenção e melhoria das condições laborais, conforme diretrizes da NR-17." + (f" {objetivo_extra}" if objetivo_extra else ""))
@@ -2057,9 +2129,15 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
     metodologias = general.get("metodologia") or []
     met_text = _aet_list_text(metodologias, "Levantamento documental, análise dos setores/cargos cadastrados, avaliação dos riscos selecionados e preenchimento do formulário ergonômico por setor")
     add_text(f"A análise foi realizada considerando: {met_text}. Foram integradas ao documento as informações já existentes nos módulos de PGR, PCMSO e LTCAT, especialmente identificação da empresa, relação função x atividade, riscos cadastrados, possíveis agravos, fontes/circunstâncias e medidas preventivas/corretivas.")
+    origens = general.get("origem_dados") or []
+    if origens:
+        add_text(f"Fontes de dados consideradas: {_aet_list_text(origens)}.")
     criterios = str(general.get("criterios_analise", "") or "").strip()
     if criterios:
         add_text(f"Critérios complementares informados: {criterios}")
+    limitacoes = str(general.get("limitacoes_analise", "") or "").strip()
+    add_heading("LIMITAÇÕES DA ANÁLISE")
+    add_text(limitacoes or "A análise foi realizada com base nas informações fornecidas pela empresa, documentos disponíveis, setores/cargos cadastrados e fatores de risco identificados no momento da elaboração. Recomenda-se atualização sempre que houver alteração relevante nas atividades, layout, organização do trabalho, jornada, mobiliário, equipamentos ou surgimento de novas queixas.")
 
     doc.add_page_break()
     add_heading("RELAÇÃO FUNÇÃO X ATIVIDADE")
@@ -2104,28 +2182,40 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
             add_text("Características das atividades: " + " ".join(descricoes))
 
         info = [
+            ("Tipo de atividade predominante", sector_data.get("tipo_atividade") or "A definir"),
             ("Postura predominante", _aet_list_text(sector_data.get("postura_predominante"), "A definir conforme observação da atividade")),
             ("Exigência física", sector_data.get("exigencia_fisica") or "A definir"),
             ("Exigência cognitiva", sector_data.get("exigencia_cognitiva") or "A definir"),
+            ("Levantamento/transporte de cargas", sector_data.get("levantamento_cargas") or "A definir"),
+            ("Movimentos repetitivos", sector_data.get("movimentos_repetitivos") or "A definir"),
+            ("Atenção/concentração", sector_data.get("atencao_concentracao") or "A definir"),
+            ("Atendimento ao público", sector_data.get("atendimento_publico") or "A definir"),
+            ("Autonomia", sector_data.get("autonomia") or "A definir"),
+            ("Metas/prioridades", sector_data.get("metas_prioridades") or "A definir"),
+            ("Comunicação", sector_data.get("comunicacao") or "A definir"),
             ("Ritmo de trabalho", sector_data.get("ritmo_trabalho") or "Compatível com a rotina operacional informada"),
             ("Pausas/recuperação", sector_data.get("pausas") or "Pausas conforme organização interna e necessidade da atividade"),
             ("Mobiliário/posto", sector_data.get("mobiliario") or "A avaliar/manter adequado à atividade"),
             ("Condições ambientais", sector_data.get("ambiente") or "Condições ambientais devem ser mantidas em níveis adequados de conforto"),
             ("Organização do trabalho", sector_data.get("organizacao") or "Rotina organizada conforme demandas do setor"),
             ("Equipamentos/ferramentas", sector_data.get("equipamentos") or "Equipamentos compatíveis com as atividades cadastradas"),
+            ("Fatores organizacionais observados", _aet_list_text(sector_data.get("fatores_organizacionais"), "A definir")),
+            ("Medidas ergonômicas recomendadas", _aet_list_text(sector_data.get("medidas_recomendadas"), "A definir conforme riscos")),
             ("Queixas/observações", sector_data.get("queixas") or sector_data.get("observacoes") or "Não informado"),
             ("Prioridade", _aet_priority_from_risks(risks, sector_data.get("prioridade", ""))),
         ]
         add_kv_table(info)
 
+        add_heading("Diagnóstico ergonômico do setor", 2)
+        add_text(_aet_sector_diagnostic(sector_name, risks, sector_data))
+
         add_heading("Fatores ergonômicos e psicossociais identificados", 2)
         if risks:
             tbl = doc.add_table(rows=1, cols=5)
-            
-        try:
-            tbl.style = "Table Grid"
-        except KeyError:
-            pass
+            try:
+                tbl.style = "Table Grid"
+            except KeyError:
+                pass
             for i, h in enumerate(["FATOR/RISCO", "TIPO", "POSSÍVEIS IMPACTOS", "FONTES/CIRCUNSTÂNCIAS", "RECOMENDAÇÕES"]):
                 tbl.rows[0].cells[i].text = h
             for risk in risks:
@@ -2172,6 +2262,8 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
         add_text(_aet_auto_sector_conclusion(sector_name, risks, sector_data))
 
     add_heading("CONCLUSÃO GERAL")
+    condicao_geral = str(general.get("condicao_ergonomica_geral") or "Adequada com recomendações").strip()
+    add_text(f"Condição ergonômica geral classificada: {condicao_geral}.")
     manual_conclusion = str(general.get("conclusao_geral_manual", "") or "").strip()
     if manual_conclusion:
         add_text(manual_conclusion)
