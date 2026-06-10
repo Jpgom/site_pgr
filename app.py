@@ -70,11 +70,11 @@ app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 # Evita uploads gigantes travarem o serviço no Render. Ajuste por variável de ambiente se precisar.
-app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "120")) * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "512")) * 1024 * 1024
 # A tela Gerar Laudos envia muitos campos quando há muitos setores, riscos, exames e dados de AET.
 # Sem estes limites maiores, o Werkzeug pode retornar: Request Entity Too Large.
-app.config["MAX_FORM_MEMORY_SIZE"] = int(os.environ.get("MAX_FORM_MEMORY_MB", "80")) * 1024 * 1024
-app.config["MAX_FORM_PARTS"] = int(os.environ.get("MAX_FORM_PARTS", "50000"))
+app.config["MAX_FORM_MEMORY_SIZE"] = int(os.environ.get("MAX_FORM_MEMORY_MB", "256")) * 1024 * 1024
+app.config["MAX_FORM_PARTS"] = int(os.environ.get("MAX_FORM_PARTS", "250000"))
 
 # Configuração da conversão visual do PDF psicossocial para Word.
 # Usamos JPEG em DPI moderado para preservar o visual sem travar por arquivos enormes.
@@ -88,7 +88,7 @@ db = SQLAlchemy(app)
 def handle_request_entity_too_large(error):
     flash(
         "O formulário ou arquivo enviado ficou maior que o limite configurado. "
-        "Tente gerar novamente. Se estiver juntando arquivos, reduza o PDF ou aumente MAX_UPLOAD_MB/MAX_FORM_MEMORY_MB no Render.",
+        "Tente gerar novamente. Se estiver no Render, adicione ou aumente MAX_UPLOAD_MB=512, MAX_FORM_MEMORY_MB=256 e MAX_FORM_PARTS=250000 nas variáveis de ambiente.",
         "error",
     )
     return redirect(request.referrer or url_for("generate"))
@@ -897,6 +897,195 @@ def _simple_norm(value: str) -> str:
     return "".join(ch for ch in value if not unicodedata.combining(ch))
 
 
+
+
+def _cell_text(cell) -> str:
+    return re.sub(r"\s+", " ", (cell.text or "")).strip()
+
+
+def _row_cells_text(row) -> list[str]:
+    return [_cell_text(cell) for cell in row.cells]
+
+
+def _label_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", _simple_norm(value)).strip()
+
+
+def _first_value_after_label(cells: list[str], label: str) -> str:
+    """Retorna o primeiro valor útil depois de uma coluna/rótulo."""
+    label_norm = _label_key(label)
+    for idx, cell in enumerate(cells):
+        if _label_key(cell) == label_norm:
+            for nxt in cells[idx + 1:]:
+                cleaned = re.sub(r"\s+", " ", nxt or "").strip()
+                if cleaned and _label_key(cleaned) != label_norm:
+                    return cleaned
+    return ""
+
+
+def _extract_field_from_docx_tables(doc) -> dict[str, str]:
+    fields = {
+        "empresa": "", "cnpj": "", "endereco": "", "bairro_cidade": "", "cep": "",
+        "cnae1": "", "descricao1": "", "grau1": "", "cnae2": "", "descricao2": "",
+        "grau2": "", "funcionarios": "", "data_atual": "", "data_final": "", "email": "", "fone": "",
+    }
+    labels = {
+        "EMPRESA": "empresa", "CNPJ": "cnpj", "ENDEREÇO": "endereco", "ENDERECO": "endereco",
+        "BAIRRO / CIDADE": "bairro_cidade", "BAIRRO/CIDADE": "bairro_cidade", "CEP": "cep",
+        "CNAE": "cnae1", "DESCRIÇÃO DA ATIVIDADE": "descricao1", "DESCRICAO DA ATIVIDADE": "descricao1",
+        "GRAU DE RISCO": "grau1", "CNAE (SECUNDÁRIO)": "cnae2", "CNAE (SECUNDARIO)": "cnae2",
+        "GRAU DE RISCO (SECUNDÁRIO)": "grau2", "GRAU DE RISCO (SECUNDARIO)": "grau2",
+        "FUNCIONÁRIOS": "funcionarios", "FUNCIONARIOS": "funcionarios", "EMAIL": "email", "FONE": "fone",
+    }
+    # Tabelas de identificação costumam ter duas colunas: rótulo | valor. Mantém ordem para diferenciar descrições primária/secundária.
+    descricao_hits = 0
+    for table in doc.tables:
+        for row in table.rows:
+            cells = _row_cells_text(row)
+            non_empty = [c for c in cells if c]
+            if len(non_empty) < 2:
+                continue
+            label_raw = non_empty[0].upper().strip()
+            value = non_empty[1].strip()
+            label_norm = re.sub(r"\s+", " ", label_raw)
+            if not value or value.upper() == label_norm:
+                continue
+            if label_norm in ("DESCRIÇÃO DA ATIVIDADE", "DESCRICAO DA ATIVIDADE"):
+                descricao_hits += 1
+                key = "descricao1" if descricao_hits == 1 else "descricao2"
+            elif label_norm == "CNAE" and fields.get("cnae1"):
+                key = "cnae2"
+            elif label_norm == "GRAU DE RISCO" and fields.get("grau1"):
+                key = "grau2"
+            else:
+                key = labels.get(label_norm)
+            if key and not fields.get(key):
+                fields[key] = value
+            if label_norm == "VIGÊNCIA" or label_norm == "VIGENCIA":
+                dates = re.findall(r"\d{2}/\d{4}|\d{2}/\d{2}/\d{4}|\d{4}", value)
+                if dates:
+                    fields["data_atual"] = dates[0]
+                if len(dates) > 1:
+                    fields["data_final"] = dates[1]
+    return fields
+
+
+def _extract_sectors_from_docx_tables(doc) -> list[dict[str, Any]]:
+    sectors: list[dict[str, Any]] = []
+    for table in doc.tables:
+        if len(table.rows) < 3 or len(table.columns) < 3:
+            continue
+        first = _row_cells_text(table.rows[0])
+        sector_name = ""
+        if any(_label_key(c) == "nome do setor" for c in first):
+            sector_name = _first_value_after_label(first, "Nome do setor")
+        if not sector_name:
+            continue
+        sector_name = sector_name.strip().upper()
+        cargos: list[dict[str, str]] = []
+        for row in table.rows[2:]:
+            cells = _row_cells_text(row)
+            if len(cells) < 3:
+                continue
+            cargo_cell = cells[0]
+            if not cargo_cell or _simple_norm(cargo_cell) in {"funcoes no setor", "funcionarios", "descricao da atividade"}:
+                continue
+            if any(skip in cargo_cell.upper() for skip in ["NOME DO SETOR", "VIGÊNCIA", "VIGENCIA"]):
+                continue
+            cargo = cargo_cell
+            cbo = "A DEFINIR"
+            m = re.search(r"(.+?)\s*[–—-]\s*CBO\s*:\s*([\d\-]+)", cargo_cell, flags=re.I)
+            if m:
+                cargo = m.group(1).strip()
+                cbo = m.group(2).strip()
+            n_func = cells[1] if len(cells) > 1 else "1"
+            desc = cells[2] if len(cells) > 2 else ""
+            if cargo and len(cargo) <= 120:
+                cargos.append({"cargo": cargo.upper(), "cbo": cbo, "n_func": n_func or "1", "descricao": desc or "Atividade importada de laudo antigo; revisar conforme função."})
+        if cargos:
+            sectors.append({"setor": sector_name, "cargos": cargos})
+    # Remove duplicados preservando cargos
+    merged: dict[str, dict[str, Any]] = {}
+    for item in sectors:
+        key = _simple_norm(item["setor"])
+        if key not in merged:
+            merged[key] = {"setor": item["setor"], "cargos": []}
+        existing_cargos = {_simple_norm(c.get("cargo", "")) + "|" + _simple_norm(c.get("cbo", "")) for c in merged[key]["cargos"]}
+        for cargo in item.get("cargos", []):
+            ckey = _simple_norm(cargo.get("cargo", "")) + "|" + _simple_norm(cargo.get("cbo", ""))
+            if ckey not in existing_cargos:
+                merged[key]["cargos"].append(cargo)
+                existing_cargos.add(ckey)
+    return list(merged.values())
+
+
+def _extract_risks_from_docx_tables(doc) -> list[dict[str, str]]:
+    risks: list[dict[str, str]] = []
+    for table in doc.tables:
+        if len(table.rows) < 8 or len(table.columns) < 4:
+            continue
+        # Tabelas de inventário têm linhas PERIGO/FATOR DE RISCO e Descrição do agente.
+        rows = [_row_cells_text(row) for row in table.rows]
+        current: dict[str, str] | None = None
+        for cells in rows:
+            label = cells[0] if cells else ""
+            label_norm = _label_key(label)
+            value = ""
+            for c in cells[1:]:
+                if c and _label_key(c) != label_norm and _label_key(c) not in {"perigo fator de risco", "prevencao e controle", "exposicao"}:
+                    value = c
+                    break
+            if label_norm == "perigo fator de risco":
+                if current and current.get("risco"):
+                    risks.append(current)
+                current = {"tipo_risco": value or "ERGONÔMICO"}
+            elif current is not None and label_norm == "descricao do agente":
+                current["risco"] = value
+            elif current is not None and label_norm == "possiveis lesoes ou agravos a saude":
+                current["possiveis_lesoes"] = value
+            elif current is not None and label_norm == "fontes ou circunstancias":
+                current["fontes_circunstancias"] = value
+            elif current is not None and label_norm == "epi":
+                current["epis"] = value
+            elif current is not None and label_norm == "epc":
+                current["epcs"] = value
+            elif current is not None and label_norm == "medidas administrativas":
+                current["acoes"] = value
+            elif current is not None and label_norm == "severidade":
+                # Linha geralmente: Severidade | MÉDIO | Probabilidade | POSSÍVEL | Nível de risco | MODERADO
+                current["grau_severidade"] = cells[1] if len(cells) > 1 else "MÉDIO"
+                for idx, c in enumerate(cells):
+                    cn = _label_key(c)
+                    if cn == "probabilidade" and idx + 1 < len(cells):
+                        current["grau_possibilidade"] = cells[idx + 1]
+                    if cn == "nivel de risco" and idx + 1 < len(cells):
+                        current["grau_nivel_risco"] = cells[idx + 1]
+        if current and current.get("risco"):
+            risks.append(current)
+    cleaned: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for risk in risks:
+        name = re.sub(r"\s+", " ", risk.get("risco", "")).strip()
+        if not name or len(name) < 4 or len(name) > 180:
+            continue
+        key = _simple_norm(name)
+        if key in seen:
+            continue
+        seen.add(key)
+        risk["risco"] = name
+        cleaned.append(risk)
+    return cleaned
+
+
+def _extract_docx_import_payload(path: Path) -> dict[str, Any]:
+    from docx import Document
+    doc = Document(str(path))
+    company_fields = _extract_field_from_docx_tables(doc)
+    sectors_cargos = _extract_sectors_from_docx_tables(doc)
+    risks = _extract_risks_from_docx_tables(doc)
+    return {"company_fields": company_fields, "sectors_cargos": sectors_cargos, "risks_detailed": risks}
+
+
 def _extract_text_from_upload(file_storage) -> str:
     """Extrai texto básico de DOCX/PDF para importação inteligente de laudos antigos."""
     if not file_storage or not getattr(file_storage, "filename", ""):
@@ -910,7 +1099,11 @@ def _extract_text_from_upload(file_storage) -> str:
         if ext == ".docx":
             from docx import Document
             doc = Document(str(path))
+            payload = _extract_docx_import_payload(path)
             parts: list[str] = []
+            parts.append("###IMPORT_JSON###")
+            parts.append(json.dumps(payload, ensure_ascii=False))
+            parts.append("###END_IMPORT_JSON###")
             parts.extend([p.text for p in doc.paragraphs if (p.text or "").strip()])
             for table in doc.tables:
                 for row in table.rows:
@@ -943,52 +1136,73 @@ def _unique_clean_lines(values: list[str]) -> list[str]:
 
 
 def _smart_extract_laudo_data(text_value: str) -> dict[str, Any]:
-    """Extrai empresa/CNPJ/setores/riscos/exames com heurísticas simples e editáveis."""
+    """Extrai empresa/CNPJ/setores/cargos/riscos/exames com heurísticas para laudos antigos."""
     text_value = text_value or ""
-    lines = [re.sub(r"\s+", " ", line).strip() for line in text_value.splitlines() if line.strip()]
-    cnpj_match = re.search(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b", text_value)
-    cnpj = cnpj_match.group(0) if cnpj_match else ""
+    imported_payload: dict[str, Any] = {}
+    marker = re.search(r"###IMPORT_JSON###\s*(\{.*?\})\s*###END_IMPORT_JSON###", text_value, flags=re.S)
+    if marker:
+        try:
+            imported_payload = json.loads(marker.group(1))
+        except Exception:
+            imported_payload = {}
+        text_value = re.sub(r"###IMPORT_JSON###.*?###END_IMPORT_JSON###", "", text_value, flags=re.S)
 
-    empresa = ""
-    for pattern in [r"Raz[aã]o Social[:\s]+(.+)", r"EMPRESA[:\s|]+(.+)", r"Empresa[:\s]+(.+)"]:
-        match = re.search(pattern, text_value, flags=re.I)
-        if match:
-            empresa = match.group(1).strip().split("|")[0].strip()
-            break
+    lines = [re.sub(r"\s+", " ", line).strip() for line in text_value.splitlines() if line.strip()]
+    company_fields = imported_payload.get("company_fields") or {}
+    cnpj = company_fields.get("cnpj") or ""
+    if not cnpj:
+        cnpj_match = re.search(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b", text_value)
+        cnpj = cnpj_match.group(0) if cnpj_match else ""
+
+    empresa = company_fields.get("empresa") or ""
     if not empresa:
-        for line in lines[:25]:
+        # Prioriza linhas/tabelas de identificação. Evita capturar títulos como RESPONSABILIDADE TÉCNICA.
+        for pattern in [
+            r"(?:^|\n)EMPRESA\s*\|\s*([^\n|]+)",
+            r"(?:^|\n)EMPRESA\s+([A-Z0-9ÁÉÍÓÚÂÊÔÃÕÇ .,&/\-]+(?:LTDA|ME|EPP|EIRELI|S/A)[^\n|]*)",
+            r"Raz[aã]o Social[:\s]+(.+)",
+        ]:
+            match = re.search(pattern, text_value, flags=re.I)
+            if match:
+                candidate = match.group(1).strip().split("|")[0].strip()
+                if not any(skip in candidate.upper() for skip in ["RESPONSABILIDADE", "IDENTIFICAÇÃO", "CONTATO"]):
+                    empresa = candidate
+                    break
+    if not empresa:
+        for line in lines[:35]:
             up = line.upper()
             if cnpj and cnpj in line:
                 continue
-            if any(skip in up for skip in ["PROGRAMA", "PCMSO", "PGR", "LTCAT", "RELATÓRIO", "LAUDO", "DATA", "FONE", "EMAIL", "ELABORAÇÃO"]):
+            if any(skip in up for skip in ["PROGRAMA", "PCMSO", "PGR", "LTCAT", "RELATÓRIO", "LAUDO", "DATA", "FONE", "EMAIL", "ELABORAÇÃO", "RESPONSABILIDADE"]):
                 continue
-            if len(line) >= 5 and ("LTDA" in up or "ME" in up or "EPP" in up):
+            if len(line) >= 5 and ("LTDA" in up or "ME" in up or "EPP" in up or "EIRELI" in up):
                 empresa = line
                 break
 
-    setores: list[str] = []
-    for match in re.finditer(r"(?:SETOR(?:ES)?|DEPARTAMENTO(?:S)?|GES)\s*[:\-]?\s*([^\n;]+)", text_value, flags=re.I):
-        value = match.group(1).strip()
-        value = re.split(r"(?:\s{2,}|\||Total|Categoria|Risco|Cargo)", value)[0].strip()
-        for item in re.split(r",|/", value):
-            if 2 <= len(item.strip()) <= 60:
-                setores.append(item.strip())
-    # Captura linhas curtas em caixa alta comuns como títulos de setor.
-    for line in lines:
-        up = line.upper()
-        if line == up and 3 <= len(line) <= 45 and not any(word in up for word in ["EMPRESA", "CNPJ", "RISCO", "PGR", "PCMSO", "LTCAT", "IDENTIFICAÇÃO", "CONCLUSÃO", "PLANO", "AÇÃO", "DATA", "EMAIL", "FONE"]):
-            if re.search(r"[A-ZÁÉÍÓÚÂÊÔÃÕÇ]", line):
-                setores.append(line)
+    # Setores/cargos: prioriza tabelas estruturadas do Word antigo.
+    setores_cargos = imported_payload.get("sectors_cargos") or []
+    setores = [item.get("setor", "") for item in setores_cargos if item.get("setor")]
+    if not setores:
+        for match in re.finditer(r"(?:Nome do setor|SETOR(?:ES)?|DEPARTAMENTO(?:S)?|GES)\s*[:\-]?\s*([^\n;|]+)", text_value, flags=re.I):
+            value = match.group(1).strip()
+            value = re.split(r"(?:\s{2,}|\||Total|Categoria|Risco|Cargo|Vigência|VIGÊNCIA)", value)[0].strip()
+            for item in re.split(r",|/", value):
+                item = item.strip()
+                if 2 <= len(item) <= 60 and not any(skip in item.upper() for skip in ["GRUPO", "HOMOGÊNEO", "EXPOSIÇÃO", "TRABALHADOR"]):
+                    setores.append(item)
 
-    riscos: list[str] = []
+    # Riscos: prioriza blocos estruturados do inventário. Depois cruza com riscos já cadastrados.
+    riscos_detalhados = imported_payload.get("risks_detailed") or []
+    riscos = [r.get("risco", "") for r in riscos_detalhados if r.get("risco")]
     known_risks = [risk.risco for risk in Risk.query.order_by(Risk.risco.asc()).all()]
     norm_text = _simple_norm(text_value)
     for risk_name in known_risks:
         if risk_name and _simple_norm(risk_name) in norm_text:
             riscos.append(risk_name)
+    # Captura padrões soltos, mas ignora textos legais e cabeçalhos.
     for match in re.finditer(r"(?:Risco|Perigo|Fator de risco)\s*[:\-]\s*([^\n|;]+)", text_value, flags=re.I):
         val = match.group(1).strip()
-        if 4 <= len(val) <= 120:
+        if 4 <= len(val) <= 140 and not any(skip in val.upper() for skip in ["OCUPACIONAL", "GRUPO", "HOMOGÊNEO", "COMBINAÇÃO"]):
             riscos.append(val)
 
     exames: list[str] = []
@@ -1000,9 +1214,27 @@ def _smart_extract_laudo_data(text_value: str) -> dict[str, Any]:
     return {
         "empresa": empresa,
         "cnpj": cnpj,
-        "setores": _unique_clean_lines(setores)[:80],
-        "riscos": _unique_clean_lines(riscos)[:160],
-        "exames": _unique_clean_lines(exames)[:80],
+        "endereco": company_fields.get("endereco", ""),
+        "bairro_cidade": company_fields.get("bairro_cidade", ""),
+        "cep": company_fields.get("cep", ""),
+        "cnae1": company_fields.get("cnae1", ""),
+        "descricao1": company_fields.get("descricao1", ""),
+        "grau1": company_fields.get("grau1", ""),
+        "cnae2": company_fields.get("cnae2", ""),
+        "descricao2": company_fields.get("descricao2", ""),
+        "grau2": company_fields.get("grau2", ""),
+        "funcionarios": company_fields.get("funcionarios", ""),
+        "data_atual": company_fields.get("data_atual", ""),
+        "data_final": company_fields.get("data_final", ""),
+        "email": company_fields.get("email", ""),
+        "fone": company_fields.get("fone", ""),
+        "setores": _unique_clean_lines(setores)[:120],
+        "setores_cargos": setores_cargos[:120],
+        "setores_json": json.dumps(setores_cargos[:120], ensure_ascii=False),
+        "riscos": _unique_clean_lines(riscos)[:240],
+        "riscos_detalhados": riscos_detalhados[:240],
+        "riscos_json": json.dumps(riscos_detalhados[:240], ensure_ascii=False),
+        "exames": _unique_clean_lines(exames)[:100],
         "texto_preview": text_value[:6000],
     }
 
@@ -2141,7 +2373,37 @@ def salvar_importacao_laudo_antigo():
     exames_text = _field("exames_extraidos")
     group_id = _field("grupo_id") or None
 
-    if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text:
+    company_fields = {
+        "endereco": _field("endereco"),
+        "bairro_cidade": _field("bairro_cidade"),
+        "cep": _field("cep"),
+        "cnae1": _field("cnae1"),
+        "descricao1": _field("descricao1"),
+        "grau1": _field("grau1"),
+        "cnae2": _field("cnae2"),
+        "descricao2": _field("descricao2"),
+        "grau2": _field("grau2"),
+        "funcionarios": _field("funcionarios"),
+        "data_atual": _field("data_atual"),
+        "data_final": _field("data_final"),
+        "email": _field("email"),
+        "fone": _field("fone"),
+    }
+
+    try:
+        setores_json = json.loads(_field("setores_json") or "[]")
+        if not isinstance(setores_json, list):
+            setores_json = []
+    except Exception:
+        setores_json = []
+    try:
+        riscos_json = json.loads(_field("riscos_json") or "[]")
+        if not isinstance(riscos_json, list):
+            riscos_json = []
+    except Exception:
+        riscos_json = []
+
+    if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text and not setores_json and not riscos_json:
         flash("Nenhum dado foi informado para salvar.", "error")
         return redirect(url_for("importar_laudo_antigo"))
 
@@ -2157,16 +2419,53 @@ def salvar_importacao_laudo_antigo():
             db.session.add(company)
             company_created = True
         else:
-            if empresa and not company.nome:
+            if empresa:
                 company.nome = empresa
-            if cnpj and not company.cnpj:
+            if cnpj:
                 company.cnpj = cnpj
+        for key, value in company_fields.items():
+            if value:
+                setattr(company, key, value)
 
     sector_count = 0
+    # Se houver estrutura com cargos vinda do Word, usa ela. Caso contrário usa uma linha por setor.
+    structured_sector_names = set()
+    for item in setores_json:
+        setor_name = re.sub(r"\s+", " ", str(item.get("setor", "")).strip()).upper()
+        if not setor_name:
+            continue
+        structured_sector_names.add(_simple_norm(setor_name))
+        cargos_raw = item.get("cargos") or []
+        cargos = []
+        for cargo in cargos_raw:
+            cargo_nome = re.sub(r"\s+", " ", str(cargo.get("cargo", "")).strip()).upper() or "A DEFINIR"
+            cargos.append({
+                "id": uuid.uuid4().hex,
+                "cargo": cargo_nome,
+                "cbo": str(cargo.get("cbo") or "A DEFINIR").strip(),
+                "n_func": str(cargo.get("n_func") or "1").strip(),
+                "descricao": str(cargo.get("descricao") or "Atividade importada de laudo antigo; revisar e detalhar conforme função.").strip(),
+            })
+        if not cargos:
+            cargos = [{"id": uuid.uuid4().hex, "cargo": "A DEFINIR", "cbo": "A DEFINIR", "n_func": "1", "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função."}]
+        existing = Sector.query.filter(db.func.lower(Sector.setor) == setor_name.lower()).first()
+        if not existing:
+            db.session.add(Sector(setor=setor_name, group_id=group_id, cargos=cargos))
+            sector_count += 1
+        else:
+            if group_id:
+                existing.group_id = group_id
+            # Atualiza cargos apenas se o setor antigo estiver sem cargos úteis.
+            old_cargos = existing.cargos or []
+            if not old_cargos or all(str(c.get("cargo", "")).upper() == "A DEFINIR" for c in old_cargos):
+                existing.cargos = cargos
+
     for line in _unique_clean_lines(setores_text.splitlines()):
+        if _simple_norm(line) in structured_sector_names:
+            continue
         existing = Sector.query.filter(db.func.lower(Sector.setor) == line.lower()).first()
         if not existing:
-            db.session.add(Sector(setor=line, group_id=group_id, cargos=[{
+            db.session.add(Sector(setor=line.upper(), group_id=group_id, cargos=[{
                 "id": uuid.uuid4().hex,
                 "cargo": "A DEFINIR",
                 "cbo": "A DEFINIR",
@@ -2175,22 +2474,30 @@ def salvar_importacao_laudo_antigo():
             }]))
             sector_count += 1
 
+    detailed_by_name: dict[str, dict[str, str]] = {}
+    for item in riscos_json:
+        name = re.sub(r"\s+", " ", str(item.get("risco", "")).strip())
+        if name:
+            detailed_by_name[_simple_norm(name)] = item
+
     risk_count = 0
     for line in _unique_clean_lines(riscos_text.splitlines()):
         existing = Risk.query.filter(db.func.lower(Risk.risco) == line.lower()).first()
         if not existing:
+            detail = detailed_by_name.get(_simple_norm(line), {})
             db.session.add(Risk(
                 risco=line,
-                acoes="Revisar ações preventivas/corretivas conforme atividade e atualizar com treinamentos NR aplicáveis.",
+                acoes=detail.get("acoes") or "Revisar ações preventivas/corretivas conforme atividade e atualizar com treinamentos NR aplicáveis.",
                 indicador="Acompanhar implementação das medidas, registros de orientação e ausência de ocorrências relacionadas.",
-                tipo_risco="ERGONÔMICO",
-                possiveis_lesoes="Revisar possíveis lesões ou agravos conforme o risco importado.",
-                fontes_circunstancias="Informação importada de laudo antigo; revisar fontes ou circunstâncias.",
-                epis="A definir conforme avaliação técnica.",
-                epcs="A definir conforme avaliação técnica.",
-                grau_severidade="MÉDIO",
-                grau_possibilidade="POSSÍVEL",
-                grau_nivel_risco="MODERADO",
+                tipo_risco=(detail.get("tipo_risco") or "ERGONÔMICO").strip().upper(),
+                descricao_agente=detail.get("risco") or line,
+                possiveis_lesoes=detail.get("possiveis_lesoes") or "Revisar possíveis lesões ou agravos conforme o risco importado.",
+                fontes_circunstancias=detail.get("fontes_circunstancias") or "Informação importada de laudo antigo; revisar fontes ou circunstâncias.",
+                epis=detail.get("epis") or "A definir conforme avaliação técnica.",
+                epcs=detail.get("epcs") or "A definir conforme avaliação técnica.",
+                grau_severidade=(detail.get("grau_severidade") or "MÉDIO").strip().upper(),
+                grau_possibilidade=(detail.get("grau_possibilidade") or "POSSÍVEL").strip().upper(),
+                grau_nivel_risco=(detail.get("grau_nivel_risco") or "MODERADO").strip().upper(),
             ))
             risk_count += 1
 
@@ -2204,7 +2511,6 @@ def salvar_importacao_laudo_antigo():
     db.session.commit()
     flash(f"Importação salva: empresa {'criada' if company_created else 'atualizada/verificada'}, {sector_count} setor(es), {risk_count} risco(s) e {exam_count} exame(s) novo(s). Revise os cadastros importados antes de gerar laudos.", "success")
     return redirect(url_for("importar_laudo_antigo"))
-
 
 @app.post("/juntar-arquivos")
 def merge_files_avulso():

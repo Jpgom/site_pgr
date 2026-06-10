@@ -144,3 +144,17 @@ body.modal-open{overflow:hidden}
   .aet-preset-box{align-items:flex-start;flex-direction:column;}
   .aet-sector-body .three-cols{grid-template-columns:1fr;}
 }
+
+.import-preview-box {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px 14px;
+}
+.compact-preview-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}

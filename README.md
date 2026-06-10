@@ -119,3 +119,17 @@ Variáveis opcionais no Render:
 - `MAX_FORM_PARTS=50000`
 
 Use `MAX_FORM_MEMORY_MB` maior se houver muitas empresas/setores/riscos/exames/AET no mesmo envio.
+
+## V32 - Importação inteligente e limite do formulário
+
+- Importação de PGR/PCMSO/LTCAT antigo mais precisa para arquivos Word: extrai identificação da empresa, setores/cargos/CBO/funcionários/descrições e riscos do inventário.
+- A tela de revisão da importação permite editar os dados antes de salvar.
+- Limites padrão aumentados para evitar `Request Entity Too Large` ao gerar laudos com muitos setores, riscos, exames e PDF psicossocial.
+
+Variáveis recomendadas no Render:
+
+```text
+MAX_UPLOAD_MB=512
+MAX_FORM_MEMORY_MB=256
+MAX_FORM_PARTS=250000
+```

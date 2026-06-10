@@ -35,6 +35,62 @@
       <input name="cnpj" value="{{ extracted.get('cnpj','') }}" placeholder="00.000.000/0000-00">
     </label>
     <label>
+      <span>Endereço</span>
+      <input name="endereco" value="{{ extracted.get('endereco','') }}" placeholder="Endereço completo">
+    </label>
+    <label>
+      <span>Bairro / Cidade</span>
+      <input name="bairro_cidade" value="{{ extracted.get('bairro_cidade','') }}" placeholder="Bairro / Cidade">
+    </label>
+    <label>
+      <span>CEP</span>
+      <input name="cep" value="{{ extracted.get('cep','') }}" placeholder="00.000-000">
+    </label>
+    <label>
+      <span>CNAE principal</span>
+      <input name="cnae1" value="{{ extracted.get('cnae1','') }}" placeholder="00.00-0-00">
+    </label>
+    <label>
+      <span>Descrição da atividade</span>
+      <input name="descricao1" value="{{ extracted.get('descricao1','') }}" placeholder="Descrição da atividade principal">
+    </label>
+    <label>
+      <span>Grau de risco</span>
+      <input name="grau1" value="{{ extracted.get('grau1','') }}" placeholder="1, 2, 3 ou 4">
+    </label>
+    <label>
+      <span>CNAE secundário</span>
+      <input name="cnae2" value="{{ extracted.get('cnae2','') }}" placeholder="Opcional">
+    </label>
+    <label>
+      <span>Descrição secundária</span>
+      <input name="descricao2" value="{{ extracted.get('descricao2','') }}" placeholder="Opcional">
+    </label>
+    <label>
+      <span>Grau secundário</span>
+      <input name="grau2" value="{{ extracted.get('grau2','') }}" placeholder="Opcional">
+    </label>
+    <label>
+      <span>Funcionários</span>
+      <input name="funcionarios" value="{{ extracted.get('funcionarios','') }}" placeholder="Quantidade">
+    </label>
+    <label>
+      <span>Vigência inicial</span>
+      <input name="data_atual" value="{{ extracted.get('data_atual','') }}" placeholder="MM/AAAA">
+    </label>
+    <label>
+      <span>Vigência final</span>
+      <input name="data_final" value="{{ extracted.get('data_final','') }}" placeholder="MM/AAAA">
+    </label>
+    <label>
+      <span>E-mail</span>
+      <input name="email" value="{{ extracted.get('email','') }}" placeholder="email@empresa.com">
+    </label>
+    <label>
+      <span>Fone</span>
+      <input name="fone" value="{{ extracted.get('fone','') }}" placeholder="(00) 0000-0000">
+    </label>
+    <label>
       <span>Grupo para setores importados</span>
       <select name="grupo_id">
         <option value="">Sem grupo</option>
