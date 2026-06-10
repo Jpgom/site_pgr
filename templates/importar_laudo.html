@@ -26,8 +26,13 @@
   <h2>2. Revisar e salvar no sistema</h2>
   <p class="muted">Os dados abaixo são sugestões. Edite antes de salvar para evitar cadastro errado.</p>
   <form method="post" action="{{ url_for('salvar_importacao_laudo_antigo') }}" class="grid-form">
+    <label class="span-2">
+      <span>Nome do modelo reutilizável</span>
+      <input name="template_name" value="Modelo importado - {{ extracted.get('empresa','Laudo antigo') }}" placeholder="Ex.: Modelo Administrativo D. Castro">
+      <small>Esse modelo guardará setores, cargos, riscos e exames para aplicar depois em qualquer empresa.</small>
+    </label>
     <label>
-      <span>Empresa</span>
+      <span>Empresa de origem do arquivo</span>
       <input name="empresa" value="{{ extracted.get('empresa','') }}" placeholder="Razão social">
     </label>
     <label>
@@ -91,7 +96,7 @@
       <input name="fone" value="{{ extracted.get('fone','') }}" placeholder="(00) 0000-0000">
     </label>
     <label>
-      <span>Grupo para setores importados</span>
+      <span>Grupo preferencial para setores quando aplicar o modelo</span>
       <select name="grupo_id">
         <option value="">Sem grupo</option>
         {% for group in groups %}
@@ -116,7 +121,7 @@
       <textarea name="exames_extraidos" rows="6" placeholder="Um exame por linha">{{ extracted.get('exames', [])|join('\n') }}</textarea>
     </label>
     <div class="span-2 actions">
-      <button class="btn primary" type="submit">Salvar dados importados</button>
+      <button class="btn primary" type="submit">Salvar como modelo reutilizável</button>
       <a class="btn ghost" href="{{ url_for('importar_laudo_antigo') }}">Cancelar</a>
     </div>
   </form>

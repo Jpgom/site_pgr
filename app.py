@@ -343,6 +343,39 @@ class ReportProfile(db.Model):
         }
 
 
+class ImportedLaudoTemplate(db.Model):
+    """Modelo reutilizável extraído de um laudo antigo.
+
+    Diferente da configuração salva de uma empresa, este modelo não fica preso
+    à empresa original. Ele guarda setores/cargos/riscos/exames extraídos para
+    serem aplicados depois em qualquer empresa cadastrada.
+    """
+
+    __tablename__ = "imported_laudo_templates"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    nome = db.Column(db.String(255), nullable=False)
+    source_company = db.Column(Text, default="")
+    source_cnpj = db.Column(Text, default="")
+    state = db.Column(db.JSON, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        state = self.state or {}
+        return {
+            "id": self.id,
+            "nome": self.nome,
+            "source_company": self.source_company or "",
+            "source_cnpj": self.source_cnpj or "",
+            "sector_count": len(state.get("setores_cargos") or state.get("setores") or []),
+            "risk_count": len(state.get("riscos_detalhados") or state.get("riscos") or []),
+            "exam_count": len(state.get("exames") or []),
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+        }
+
+
 FORM_OPTIONS = {
     "tipos_risco": list(TIPO_RISCO_COLORS.keys()),
     "severidades": list(SEVERIDADE_COLORS.keys()),
@@ -1878,6 +1911,167 @@ def _sorted_report_profiles() -> list[dict[str, Any]]:
     return [profile.to_dict() for profile in ReportProfile.query.order_by(ReportProfile.updated_at.desc()).all()]
 
 
+def _sorted_imported_laudo_templates() -> list[dict[str, Any]]:
+    return [item.to_dict() for item in ImportedLaudoTemplate.query.order_by(ImportedLaudoTemplate.updated_at.desc()).all()]
+
+
+def _upsert_import_risk(detail: dict[str, Any] | None, fallback_name: str = "") -> Risk | None:
+    detail = detail or {}
+    name = re.sub(r"\s+", " ", str(detail.get("risco") or fallback_name or "").strip())
+    if not name:
+        return None
+    existing = Risk.query.filter(db.func.lower(Risk.risco) == name.lower()).first()
+    if existing:
+        return existing
+    risk = Risk(
+        risco=name,
+        acoes=detail.get("acoes") or "Revisar ações preventivas/corretivas conforme atividade e atualizar com treinamentos NR aplicáveis.",
+        indicador="Acompanhar implementação das medidas, registros de orientação e ausência de ocorrências relacionadas.",
+        tipo_risco=(detail.get("tipo_risco") or "ERGONÔMICO").strip().upper(),
+        descricao_agente=detail.get("risco") or name,
+        possiveis_lesoes=detail.get("possiveis_lesoes") or "Revisar possíveis lesões ou agravos conforme o risco importado.",
+        fontes_circunstancias=detail.get("fontes_circunstancias") or "Informação importada de laudo antigo; revisar fontes ou circunstâncias.",
+        epis=detail.get("epis") or "A definir conforme avaliação técnica.",
+        epcs=detail.get("epcs") or "A definir conforme avaliação técnica.",
+        grau_severidade=(detail.get("grau_severidade") or "MÉDIO").strip().upper(),
+        grau_possibilidade=(detail.get("grau_possibilidade") or "POSSÍVEL").strip().upper(),
+        grau_nivel_risco=(detail.get("grau_nivel_risco") or "MODERADO").strip().upper(),
+    )
+    db.session.add(risk)
+    db.session.flush()
+    return risk
+
+
+def _upsert_import_exam(name: str) -> Exam | None:
+    name = re.sub(r"\s+", " ", str(name or "").strip())
+    if not name:
+        return None
+    existing = Exam.query.filter(db.func.lower(Exam.exame) == name.lower()).first()
+    if existing:
+        return existing
+    exam = Exam(exame=name, periodicidade="Conforme PCMSO")
+    db.session.add(exam)
+    db.session.flush()
+    return exam
+
+
+def _upsert_import_sector(item: dict[str, Any], group_id: str | None = None) -> Sector | None:
+    setor_name = re.sub(r"\s+", " ", str(item.get("setor", "")).strip()).upper()
+    if not setor_name:
+        return None
+    cargos_raw = item.get("cargos") or []
+    cargos: list[dict[str, str]] = []
+    for cargo in cargos_raw:
+        cargo_nome = re.sub(r"\s+", " ", str(cargo.get("cargo", "")).strip()).upper() or "A DEFINIR"
+        cargos.append({
+            "id": uuid.uuid4().hex,
+            "cargo": cargo_nome,
+            "cbo": str(cargo.get("cbo") or "A DEFINIR").strip(),
+            "n_func": str(cargo.get("n_func") or "1").strip(),
+            "descricao": str(cargo.get("descricao") or "Atividade importada de laudo antigo; revisar e detalhar conforme função.").strip(),
+        })
+    if not cargos:
+        cargos = [{"id": uuid.uuid4().hex, "cargo": "A DEFINIR", "cbo": "A DEFINIR", "n_func": "1", "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função."}]
+    sector = Sector.query.filter(db.func.lower(Sector.setor) == setor_name.lower()).first()
+    if not sector:
+        sector = Sector(setor=setor_name, group_id=group_id, cargos=cargos)
+        db.session.add(sector)
+        db.session.flush()
+        return sector
+    if group_id:
+        sector.group_id = group_id
+    old_cargos = sector.cargos or []
+    old_keys = {(_simple_norm(str(c.get("cargo", ""))) + "|" + _simple_norm(str(c.get("cbo", "")))) for c in old_cargos}
+    merged = list(old_cargos)
+    changed = False
+    if not old_cargos or all(str(c.get("cargo", "")).upper() == "A DEFINIR" for c in old_cargos):
+        sector.cargos = cargos
+        changed = True
+    else:
+        for cargo_item in cargos:
+            key = _simple_norm(str(cargo_item.get("cargo", ""))) + "|" + _simple_norm(str(cargo_item.get("cbo", "")))
+            if key not in old_keys:
+                merged.append(cargo_item)
+                old_keys.add(key)
+                changed = True
+        if changed:
+            sector.cargos = merged
+    db.session.flush()
+    return sector
+
+
+def _apply_imported_template_to_company(template: ImportedLaudoTemplate, company_id: str, group_id: str | None = None) -> ReportProfile:
+    state = template.state or {}
+    sectors_data = state.get("setores_cargos") or []
+    if not sectors_data:
+        sectors_data = [{"setor": name, "cargos": []} for name in (state.get("setores") or [])]
+    risk_details = state.get("riscos_detalhados") or []
+    risk_names = state.get("riscos") or []
+    # Une riscos detalhados com riscos simples, mantendo ordem e sem duplicar.
+    details_by_norm = {_simple_norm(str(item.get("risco", ""))): item for item in risk_details if item.get("risco")}
+    merged_risk_details: list[dict[str, Any]] = []
+    seen_risks: set[str] = set()
+    for item in risk_details:
+        key = _simple_norm(str(item.get("risco", "")))
+        if key and key not in seen_risks:
+            merged_risk_details.append(item)
+            seen_risks.add(key)
+    for name in risk_names:
+        key = _simple_norm(name)
+        if key and key not in seen_risks:
+            merged_risk_details.append(details_by_norm.get(key) or {"risco": name})
+            seen_risks.add(key)
+
+    sectors: list[Sector] = []
+    for item in sectors_data:
+        sector = _upsert_import_sector(item, group_id=group_id)
+        if sector:
+            sectors.append(sector)
+    risks: list[Risk] = []
+    for detail in merged_risk_details:
+        risk = _upsert_import_risk(detail)
+        if risk:
+            risks.append(risk)
+    exams: list[Exam] = []
+    for exam_name in (state.get("exames") or []):
+        exam = _upsert_import_exam(exam_name)
+        if exam:
+            exams.append(exam)
+
+    company = db.session.get(Company, company_id)
+    today = (company.data_atual if company else "") or state.get("data_atual") or datetime.now().strftime("%m/%Y")
+    final = (company.data_final if company else "") or state.get("data_final") or ""
+    selected_sector_ids = [s.id for s in sectors]
+    risk_ids = [r.id for r in risks]
+    exam_ids = [e.id for e in exams]
+    profile_state = {
+        "company_id": company_id,
+        "data_criacao_laudo": today,
+        "ajuste_psicossocial": "",
+        "data_da_revisao": "",
+        "profile_id": "",
+        "profile_name": f"Importado de {template.nome}",
+        "selected_sector_ids": selected_sector_ids,
+        "selected_risk_ids_by_sector": {sector_id: risk_ids for sector_id in selected_sector_ids},
+        "selected_risk_group_ids_by_sector": {sector_id: [] for sector_id in selected_sector_ids},
+        "selected_exam_ids_by_sector": {sector_id: exam_ids for sector_id in selected_sector_ids},
+        "aet": {"general": {}, "by_sector": {}},
+    }
+    profile = ReportProfile(
+        company_id=company_id,
+        nome=f"Importado: {template.nome}",
+        data_criacao_laudo=today,
+        ajuste_psicossocial="",
+        data_da_revisao="",
+        state=profile_state,
+    )
+    db.session.add(profile)
+    db.session.commit()
+    profile.state["profile_id"] = profile.id
+    db.session.commit()
+    return profile
+
+
 def _save_report_profile_from_form(auto: bool = False) -> ReportProfile | None:
     company_id = _field("company_id")
     if not company_id:
@@ -2293,6 +2487,7 @@ def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "companies": _sorted_companies(),
         "aet_presets": AET_CNAE_PRESETS,
         "report_profiles": _sorted_report_profiles(),
+        "imported_templates": _sorted_imported_laudo_templates(),
         "options": FORM_OPTIONS,
         "today": today,
         "next_year": next_year,
@@ -2320,9 +2515,38 @@ def _validate_complete_report_fields(company: dict[str, str], label: str) -> lis
 
 @app.route("/gerar")
 def gerar():
+    profile_id = request.args.get("profile_id", "").strip()
+    if profile_id:
+        profile = db.session.get(ReportProfile, profile_id)
+        if profile:
+            state = dict(profile.state or {})
+            state["profile_id"] = profile.id
+            state["profile_name"] = profile.nome
+            return render_template("gerar.html", **_gerar_context(state))
     return render_template("gerar.html", **_gerar_context())
 
 
+
+
+@app.post("/aplicar-modelo-importado")
+def apply_imported_template():
+    company_id = _field("company_id")
+    template_id = _field("imported_template_id")
+    group_id = _field("imported_template_group_id") or None
+    if not company_id:
+        flash("Selecione a empresa que receberá os dados do laudo antigo antes de aplicar o modelo.", "error")
+        return _render_gerar_with_current_form()
+    company = db.session.get(Company, company_id)
+    if not company:
+        flash("Empresa selecionada não foi encontrada.", "error")
+        return _render_gerar_with_current_form()
+    template = db.session.get(ImportedLaudoTemplate, template_id) if template_id else None
+    if not template:
+        flash("Selecione um modelo importado de laudo antigo para aplicar.", "error")
+        return _render_gerar_with_current_form()
+    profile = _apply_imported_template_to_company(template, company_id, group_id=group_id)
+    flash("Modelo importado aplicado à empresa. Os setores, cargos, riscos e exames foram carregados para revisão antes de gerar os laudos.", "success")
+    return redirect(url_for("gerar", profile_id=profile.id))
 
 
 @app.post("/salvar-configuracao-laudo")
@@ -2406,6 +2630,58 @@ def salvar_importacao_laudo_antigo():
     if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text and not setores_json and not riscos_json:
         flash("Nenhum dado foi informado para salvar.", "error")
         return redirect(url_for("importar_laudo_antigo"))
+
+    # Novo comportamento: a importação guarda um MODELO REUTILIZÁVEL de laudo antigo.
+    # Assim, os setores/cargos/riscos/exames extraídos podem ser aplicados depois em qualquer empresa,
+    # sem ficarem presos à empresa original do arquivo enviado.
+    company_created = False
+    if empresa or cnpj:
+        company = None
+        if cnpj:
+            company = Company.query.filter(db.func.lower(Company.cnpj) == cnpj.lower()).first()
+        if not company and empresa:
+            company = Company.query.filter(db.func.lower(Company.nome) == empresa.lower()).first()
+        if not company:
+            company = Company(nome=empresa or "Empresa importada", cnpj=cnpj or "")
+            db.session.add(company)
+            company_created = True
+        else:
+            if empresa:
+                company.nome = empresa
+            if cnpj:
+                company.cnpj = cnpj
+        for key, value in company_fields.items():
+            if value:
+                setattr(company, key, value)
+
+    template_name = _field("template_name") or f"Modelo importado - {empresa or cnpj or datetime.now().strftime('%d/%m/%Y %H:%M')}"
+    template_state = {
+        "empresa": empresa,
+        "cnpj": cnpj,
+        **company_fields,
+        "setores": _unique_clean_lines(setores_text.splitlines()),
+        "setores_cargos": setores_json,
+        "riscos": _unique_clean_lines(riscos_text.splitlines()),
+        "riscos_detalhados": riscos_json,
+        "exames": _unique_clean_lines(exames_text.splitlines()),
+        "grupo_id_preferencial": group_id or "",
+    }
+    template = ImportedLaudoTemplate(
+        nome=template_name,
+        source_company=empresa or "",
+        source_cnpj=cnpj or "",
+        state=template_state,
+    )
+    db.session.add(template)
+    db.session.commit()
+    sector_total = len(template_state["setores_cargos"] or template_state["setores"])
+    risk_total = len(template_state["riscos_detalhados"] or template_state["riscos"])
+    exam_total = len(template_state["exames"])
+    flash(
+        f"Importação salva como modelo reutilizável: {template.nome}. Foram guardados {sector_total} setor(es)/grupo(s), {risk_total} risco(s) e {exam_total} exame(s). Agora vá em Gerar laudos, selecione qualquer empresa e aplique este modelo importado.",
+        "success",
+    )
+    return redirect(url_for("importar_laudo_antigo"))
 
     company_created = False
     if empresa or cnpj:

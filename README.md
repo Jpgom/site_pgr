@@ -133,3 +133,9 @@ MAX_UPLOAD_MB=512
 MAX_FORM_MEMORY_MB=256
 MAX_FORM_PARTS=250000
 ```
+
+## V34 - Modelos reutilizáveis de laudos antigos
+
+- A importação inteligente agora salva um modelo reutilizável com setores, cargos, riscos e exames extraídos do laudo antigo.
+- O modelo não fica preso à empresa original: ele pode ser aplicado em qualquer empresa cadastrada na tela Gerar laudos.
+- Ao aplicar o modelo em uma empresa, o sistema cria/atualiza os setores, cargos, riscos e exames necessários e cria uma configuração de geração já marcada para revisão.
