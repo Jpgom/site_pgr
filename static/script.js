@@ -860,3 +860,86 @@ if (suggestExamsBtn && pgrForm) {
   button.addEventListener('click', applyPreset);
   updateStatus();
 })();
+
+// Tela de carregamento para aplicação de modelo importado.
+// Evita a sensação de travamento quando o sistema precisa criar muitos setores, cargos e vínculos de riscos.
+(function(){
+  function isApplyImportedSubmitter(submitter){
+    if (!submitter) return false;
+    const action = submitter.getAttribute('formaction') || submitter.formAction || '';
+    return String(action).includes('/aplicar-modelo-importado');
+  }
+  function ensureOverlay(){
+    let overlay = document.getElementById('importApplyLoadingOverlay');
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'importApplyLoadingOverlay';
+    overlay.className = 'loading-page-overlay';
+    overlay.innerHTML = `
+      <div class="loading-page-card" role="status" aria-live="polite">
+        <div class="loading-badge">Importação inteligente</div>
+        <h2>Aplicando modelo na empresa...</h2>
+        <p class="loading-text" id="importApplyLoadingText">Preparando dados do laudo antigo.</p>
+        <div class="progress-track"><div class="progress-bar" id="importApplyProgressBar"></div></div>
+        <ol class="loading-steps">
+          <li data-loading-step="1" class="is-active">Conferindo empresa selecionada</li>
+          <li data-loading-step="2">Criando setores e cargos</li>
+          <li data-loading-step="3">Cadastrando riscos ainda inexistentes</li>
+          <li data-loading-step="4">Vinculando riscos por setor</li>
+          <li data-loading-step="5">Preparando seleção para geração dos laudos</li>
+        </ol>
+        <small>Não feche esta aba. Em modelos grandes, essa etapa pode levar alguns instantes.</small>
+      </div>`;
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+  function showApplyLoading(){
+    const overlay = ensureOverlay();
+    overlay.classList.add('is-visible');
+    const bar = overlay.querySelector('#importApplyProgressBar');
+    const text = overlay.querySelector('#importApplyLoadingText');
+    const steps = Array.from(overlay.querySelectorAll('[data-loading-step]'));
+    const messages = [
+      ['Conferindo empresa selecionada e modelo importado.', 12],
+      ['Lendo setores e cargos do modelo.', 28],
+      ['Cadastrando setores/cargos e evitando duplicidades.', 45],
+      ['Cadastrando riscos e preservando vínculo por setor.', 65],
+      ['Aplicando exames e preparando a tela de geração.', 82],
+      ['Finalizando. Você será redirecionado automaticamente.', 94]
+    ];
+    let i = 0;
+    function tick(){
+      const current = messages[Math.min(i, messages.length - 1)];
+      if (text) text.textContent = current[0];
+      if (bar) bar.style.width = `${current[1]}%`;
+      steps.forEach((step, idx) => {
+        step.classList.toggle('is-active', idx === Math.min(i, steps.length - 1));
+        step.classList.toggle('is-done', idx < Math.min(i, steps.length - 1));
+      });
+      if (i < messages.length - 1) {
+        i += 1;
+        window.setTimeout(tick, i < 3 ? 900 : 1400);
+      } else {
+        // Mantém uma animação leve até a resposta do servidor chegar.
+        let pulse = 94;
+        const id = window.setInterval(() => {
+          if (!overlay.classList.contains('is-visible')) return window.clearInterval(id);
+          pulse = pulse >= 98 ? 94 : pulse + 1;
+          if (bar) bar.style.width = `${pulse}%`;
+        }, 900);
+      }
+    }
+    tick();
+  }
+  document.addEventListener('submit', function(ev){
+    const form = ev.target;
+    if (!form || !form.matches || !form.matches('#pgrSelectionForm')) return;
+    if (isApplyImportedSubmitter(ev.submitter)) {
+      showApplyLoading();
+      if (ev.submitter) {
+        ev.submitter.disabled = true;
+        ev.submitter.textContent = 'Aplicando modelo...';
+      }
+    }
+  }, true);
+})();

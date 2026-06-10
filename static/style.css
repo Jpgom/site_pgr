@@ -181,3 +181,110 @@ body.modal-open{overflow:hidden}
   font-weight: 700;
   padding: 6px 10px;
 }
+
+/* Tela de carregamento da aplicação de modelos importados */
+.loading-page-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(245, 247, 251, 0.92);
+  backdrop-filter: blur(8px);
+}
+.loading-page-overlay.is-visible {
+  display: flex;
+}
+.loading-page-card {
+  width: min(620px, 100%);
+  border-radius: 24px;
+  background: #fff;
+  border: 1px solid #e4e9f2;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.18);
+  padding: 32px;
+}
+.loading-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #eef4ff;
+  color: #2457d6;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.loading-page-card h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+  color: #071934;
+}
+.loading-text {
+  margin: 0 0 18px;
+  color: #52637a;
+}
+.progress-track {
+  height: 12px;
+  border-radius: 999px;
+  background: #edf1f7;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.progress-bar {
+  height: 100%;
+  width: 6%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #6d5dfc);
+  transition: width .55s ease;
+}
+.loading-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+  display: grid;
+  gap: 10px;
+}
+.loading-steps li {
+  position: relative;
+  padding-left: 30px;
+  color: #6b7a90;
+  font-weight: 700;
+}
+.loading-steps li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  background: #fff;
+}
+.loading-steps li.is-active {
+  color: #0f2852;
+}
+.loading-steps li.is-active::before {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, .12);
+}
+.loading-steps li.is-done {
+  color: #059669;
+}
+.loading-steps li.is-done::before {
+  content: '✓';
+  display: grid;
+  place-items: center;
+  background: #10b981;
+  border-color: #10b981;
+  color: #fff;
+  font-size: 12px;
+}
+.loading-page-card small {
+  display: block;
+  color: #6b7a90;
+}
