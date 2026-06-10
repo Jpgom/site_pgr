@@ -74,3 +74,15 @@ O banco existente é preservado. As novas tabelas/colunas são criadas automatic
 ## V23 - Relatório Psicossocial preservado no Word
 
 A junção PGR + AET + Relatório Psicossocial agora insere o PDF psicossocial como páginas-imagem dentro do DOCX final. Essa abordagem evita as quebras de layout da conversão PDF -> Word por texto/tabelas, preservando gráficos, tabelas, cores e espaçamentos exatamente como no PDF original. O conteúdo do psicossocial fica visualmente fiel, porém não editável como texto.
+
+## V24 - Otimização da junção de arquivos
+
+- A conversão visual do PDF psicossocial agora usa JPEG otimizado em DPI moderado, reduzindo o tamanho do DOCX final e o tempo de processamento.
+- Os arquivos temporários da junção são apagados automaticamente após a geração, evitando acúmulo no disco do Render.
+- O `Procfile` foi ajustado com timeout maior para evitar reinício do worker durante junções mais pesadas.
+- A aba **Juntar arquivos** mostra aviso de processamento e bloqueia clique duplo enquanto o Word é gerado.
+- Variáveis opcionais no Render:
+  - `PSICOSSOCIAL_RENDER_DPI` padrão `135`.
+  - `PSICOSSOCIAL_JPEG_QUALITY` padrão `82`.
+  - `PSICOSSOCIAL_MAX_PAGES` padrão `80`.
+  - `MAX_UPLOAD_MB` padrão `120`.

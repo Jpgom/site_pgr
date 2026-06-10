@@ -66,6 +66,14 @@ app.secret_key = os.environ.get("SECRET_KEY", "troque-esta-chave-em-producao")
 app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+# Evita uploads gigantes travarem o serviço no Render. Ajuste por variável de ambiente se precisar.
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "120")) * 1024 * 1024
+
+# Configuração da conversão visual do PDF psicossocial para Word.
+# Usamos JPEG em DPI moderado para preservar o visual sem travar por arquivos enormes.
+PSICOSSOCIAL_RENDER_DPI = max(90, min(180, int(os.environ.get("PSICOSSOCIAL_RENDER_DPI", "135"))))
+PSICOSSOCIAL_JPEG_QUALITY = max(60, min(92, int(os.environ.get("PSICOSSOCIAL_JPEG_QUALITY", "82"))))
+PSICOSSOCIAL_MAX_PAGES = int(os.environ.get("PSICOSSOCIAL_MAX_PAGES", "80"))
 
 db = SQLAlchemy(app)
 
@@ -1435,6 +1443,8 @@ def _render_pdf_pages_to_docx_body(doc, pdf_path: Path, images_dir: Path) -> Non
     pdf = fitz.open(str(pdf_path))
     if pdf.page_count == 0:
         raise ValueError("O PDF do Relatório Psicossocial não possui páginas.")
+    if pdf.page_count > PSICOSSOCIAL_MAX_PAGES:
+        raise ValueError(f"O PDF possui {pdf.page_count} páginas. O limite atual é {PSICOSSOCIAL_MAX_PAGES} páginas para evitar travamentos no Render.")
 
     first_rect = pdf[0].rect
     section = doc.sections[-1]
@@ -1449,15 +1459,15 @@ def _render_pdf_pages_to_docx_body(doc, pdf_path: Path, images_dir: Path) -> Non
     section.footer_distance = Inches(0)
     _clear_section_headers_footers(section)
 
-    zoom = 200 / 72
+    zoom = PSICOSSOCIAL_RENDER_DPI / 72
     matrix = fitz.Matrix(zoom, zoom)
 
     try:
         for page_index in range(pdf.page_count):
             page = pdf[page_index]
-            image_path = images_dir / f"pagina_{page_index + 1:03d}.png"
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
-            pix.save(str(image_path))
+            image_path = images_dir / f"pagina_{page_index + 1:03d}.jpg"
+            pix = page.get_pixmap(matrix=matrix, alpha=False, colorspace=fitz.csRGB)
+            pix.save(str(image_path), output="jpeg", jpg_quality=PSICOSSOCIAL_JPEG_QUALITY)
 
             paragraph = doc.add_paragraph()
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -1486,10 +1496,13 @@ def _append_pdf_as_images_to_docx(base_docx: Path, pdf_path: Path, output_docx: 
 
     doc = Document(str(base_docx))
     doc.add_section(WD_SECTION.NEW_PAGE)
-    images_dir = output_docx.parent / f"{output_docx.stem}_psicossocial_paginas"
-    _render_pdf_pages_to_docx_body(doc, pdf_path, images_dir)
     output_docx.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_docx))
+    # As imagens temporárias são incorporadas ao DOCX no momento do save.
+    # Depois disso, podem ser removidas para não encher o disco do Render.
+    with tempfile.TemporaryDirectory() as img_tmp:
+        images_dir = Path(img_tmp) / "psicossocial_paginas"
+        _render_pdf_pages_to_docx_body(doc, pdf_path, images_dir)
+        doc.save(str(output_docx))
     return output_docx
 
 
@@ -1541,15 +1554,15 @@ def _convert_pdf_to_docx(pdf_path: Path, output_docx: Path) -> Path:
     _clear_section_headers_footers(section)
 
     # 200 dpi é um bom equilíbrio entre fidelidade visual e tamanho do arquivo.
-    zoom = 200 / 72
+    zoom = PSICOSSOCIAL_RENDER_DPI / 72
     matrix = fitz.Matrix(zoom, zoom)
 
     try:
         for page_index in range(pdf.page_count):
             page = pdf[page_index]
-            image_path = images_dir / f"pagina_{page_index + 1:03d}.png"
-            pix = page.get_pixmap(matrix=matrix, alpha=False)
-            pix.save(str(image_path))
+            image_path = images_dir / f"pagina_{page_index + 1:03d}.jpg"
+            pix = page.get_pixmap(matrix=matrix, alpha=False, colorspace=fitz.csRGB)
+            pix.save(str(image_path), output="jpeg", jpg_quality=PSICOSSOCIAL_JPEG_QUALITY)
 
             paragraph = doc.add_paragraph()
             paragraph.paragraph_format.space_before = Pt(0)
@@ -1610,18 +1623,45 @@ def _save_uploaded_file(file_storage, folder: Path, allowed_exts: set[str], labe
 def _build_combined_pgr_aet_psychosocial(pgr_docx: Path, aet_docx: Path, psicossocial_pdf: Path, output_path: Path, empresa: str, data_criacao: str, mes_extenso: str | None = None) -> Path:
     workdir = output_path.parent / f"merge_{uuid.uuid4().hex}"
     workdir.mkdir(parents=True, exist_ok=True)
-    link_pgr = workdir / "link_pgr_para_aet.docx"
-    link_aet = workdir / "link_aet_para_psicossocial.docx"
-    merged_without_psy = workdir / "pgr_aet_links.docx"
+    try:
+        link_pgr = workdir / "link_pgr_para_aet.docx"
+        link_aet = workdir / "link_aet_para_psicossocial.docx"
+        merged_without_psy = workdir / "pgr_aet_links.docx"
 
-    _prepare_link_docx(LINK_PGR_AET_TEMPLATE, link_pgr, empresa, data_criacao, mes_extenso)
-    _prepare_link_docx(LINK_AET_PSICOSSOCIAL_TEMPLATE, link_aet, empresa, data_criacao, mes_extenso)
+        _prepare_link_docx(LINK_PGR_AET_TEMPLATE, link_pgr, empresa, data_criacao, mes_extenso)
+        _prepare_link_docx(LINK_AET_PSICOSSOCIAL_TEMPLATE, link_aet, empresa, data_criacao, mes_extenso)
 
-    # Primeiro junta os arquivos editáveis. Depois adiciona o Relatório
-    # Psicossocial como páginas-imagem em uma nova seção sem cabeçalho/rodapé.
-    # Isso evita as distorções geradas por conversão PDF -> DOCX por texto.
-    _merge_docx_files([pgr_docx, link_pgr, aet_docx, link_aet], merged_without_psy)
-    return _append_pdf_as_images_to_docx(merged_without_psy, psicossocial_pdf, output_path)
+        # Primeiro junta os arquivos editáveis. Depois adiciona o Relatório
+        # Psicossocial como páginas-imagem em uma nova seção sem cabeçalho/rodapé.
+        # Isso evita as distorções geradas por conversão PDF -> DOCX por texto.
+        _merge_docx_files([pgr_docx, link_pgr, aet_docx, link_aet], merged_without_psy)
+        return _append_pdf_as_images_to_docx(merged_without_psy, psicossocial_pdf, output_path)
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _send_docx_with_cleanup(path: Path, download_name: str):
+    """Envia o DOCX e limpa o arquivo temporário quando a resposta terminar.
+
+    Evita acúmulo de arquivos grandes no disco do Render após juntar documentos.
+    """
+    response = send_file(
+        path,
+        as_attachment=True,
+        download_name=download_name,
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+    @response.call_on_close
+    def _cleanup() -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return response
+
+
 def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     today = datetime.now().strftime("%m/%Y")
     next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")
@@ -1715,7 +1755,7 @@ def merge_files_avulso():
             OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
             output_path = OUTPUT_DIR / f"pgr_aet_psicossocial_{stamp}.docx"
             _build_combined_pgr_aet_psychosocial(pgr_docx, aet_docx, psicossocial_pdf, output_path, empresa, data_criacao, mes_extenso)
-            return send_file(output_path, as_attachment=True, download_name="PGR_AET_RELATORIO_PSICOSSOCIAL.docx", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            return _send_docx_with_cleanup(output_path, "PGR_AET_RELATORIO_PSICOSSOCIAL.docx")
     except Exception as exc:
         flash(f"Erro ao juntar arquivos: {exc}", "error")
         return redirect(url_for("juntar_arquivos"))
@@ -2017,7 +2057,7 @@ def generate_pgr_aet_psychosocial():
                 company.get("data_criacao_laudo") or company.get("data_avaliacao") or company.get("data_atual", ""),
                 _field("mes_extenso"),
             )
-            return send_file(output_path, as_attachment=True, download_name="PGR_AET_RELATORIO_PSICOSSOCIAL.docx", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            return _send_docx_with_cleanup(output_path, "PGR_AET_RELATORIO_PSICOSSOCIAL.docx")
     except Exception as exc:
         flash(f"Erro ao gerar PGR + AET + Relatório Psicossocial: {exc}", "error")
         return _render_gerar_with_current_form()

@@ -6,12 +6,12 @@
   <div>
     <p class="eyebrow">Anexos</p>
     <h1>Juntar PGR + AET + Relatório Psicossocial</h1>
-    <p class="muted">Envie os arquivos avulsos para gerar um único documento Word final.</p>
+    <p class="muted">Envie os arquivos avulsos para gerar um único documento Word final. Relatórios psicossociais grandes podem levar alguns minutos, sem precisar clicar de novo.</p>
   </div>
 </div>
 
 <section class="panel">
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('merge_files_avulso') }}" class="grid-form">
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('merge_files_avulso') }}" class="grid-form" data-processing-form="true">
     <label>
       <span>Empresa cadastrada</span>
       <select name="company_id" id="joinCompanySelect">
@@ -53,7 +53,7 @@
     </div>
 
     <div class="form-actions span-2">
-      <button class="btn primary" type="submit">Juntar e baixar Word</button>
+      <button class="btn primary" type="submit" data-processing-text="Juntando arquivos... aguarde">Juntar e baixar Word</button>
     </div>
   </form>
 </section>

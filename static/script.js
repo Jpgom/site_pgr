@@ -155,6 +155,10 @@ if (pgrForm) {
         return;
       }
     }
+    if (submitter && action.includes('gerar-pgr-aet-psicossocial')) {
+      submitter.disabled = true;
+      submitter.textContent = 'Juntando arquivos... aguarde';
+    }
   });
 }
 
@@ -521,3 +525,15 @@ if (joinCompanySelect) {
     if (input && option && option.dataset.name) input.value = option.dataset.name;
   });
 }
+
+// Evita múltiplos cliques e mostra que o arquivo está sendo processado.
+document.querySelectorAll('form[data-processing-form="true"]').forEach((form) => {
+  form.addEventListener('submit', () => {
+    if (!form.checkValidity()) return;
+    form.querySelectorAll('button[type="submit"]').forEach((button) => {
+      button.dataset.originalText = button.textContent;
+      button.disabled = true;
+      button.textContent = button.dataset.processingText || 'Processando... aguarde';
+    });
+  });
+});
