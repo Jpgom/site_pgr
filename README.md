@@ -86,3 +86,17 @@ A junção PGR + AET + Relatório Psicossocial agora insere o PDF psicossocial c
   - `PSICOSSOCIAL_JPEG_QUALITY` padrão `82`.
   - `PSICOSSOCIAL_MAX_PAGES` padrão `80`.
   - `MAX_UPLOAD_MB` padrão `120`.
+
+## V25 - Junção sem recarregar e modelos atualizados
+
+- A aba **Juntar arquivos** agora gera o Word por download assíncrono, mantendo a página aberta para juntar outros arquivos em seguida.
+- A opção **PGR + AET + Psicossocial** dentro da tela **Gerar laudos** também mantém a página e as marcações preenchidas após o download.
+- Os modelos completos de PGR, PCMSO e LTCAT foram substituídos pelos modelos enviados na atualização atual.
+
+## V26 - melhorias adicionadas
+
+- Módulo inicial de Ergonomia/AET: gera uma AET editável a partir da empresa, setores, cargos e riscos ergonômicos/psicossociais selecionados.
+- Importação inteligente de laudos antigos: nova aba para enviar PGR/PCMSO/LTCAT antigo em DOCX ou PDF, extrair empresa, CNPJ, setores, riscos e exames e salvar no sistema após revisão.
+- Tela de geração em etapas: wizard com barra lateral de progresso para Empresa, Dados, Setores, Riscos, Exames e Gerar.
+- Motor de regras de exames: botão para sugerir exames automaticamente conforme riscos selecionados por setor.
+- Pacote ZIP da empresa: gera PGR, PCMSO, LTCAT, AET e resumo da geração em um único ZIP.

@@ -114,7 +114,7 @@ if (pgrForm) {
   pgrForm.addEventListener('submit', (event) => {
     const submitter = event.submitter;
     const action = submitter ? (submitter.getAttribute('formaction') || '') : '';
-    const isComplete = action.includes('gerar-pgr-completo') || action.includes('gerar-pcmso-completo') || action.includes('gerar-ltcat-completo') || action.includes('gerar-pgr-aet-psicossocial');
+    const isComplete = action.includes('gerar-pgr-completo') || action.includes('gerar-pcmso-completo') || action.includes('gerar-ltcat-completo') || action.includes('gerar-pgr-aet-psicossocial') || action.includes('gerar-aet-completa') || action.includes('gerar-pacote-empresa');
     if (!isComplete) return;
 
     const company = document.getElementById('companySelect');
@@ -155,7 +155,7 @@ if (pgrForm) {
         return;
       }
     }
-    if (submitter && action.includes('gerar-pgr-aet-psicossocial')) {
+    if (submitter && action.includes('gerar-pgr-aet-psicossocial') && !submitter.dataset.ajaxDownload) {
       submitter.disabled = true;
       submitter.textContent = 'Juntando arquivos... aguarde';
     }
@@ -526,14 +526,184 @@ if (joinCompanySelect) {
   });
 }
 
-// Evita múltiplos cliques e mostra que o arquivo está sendo processado.
-document.querySelectorAll('form[data-processing-form="true"]').forEach((form) => {
-  form.addEventListener('submit', () => {
-    if (!form.checkValidity()) return;
-    form.querySelectorAll('button[type="submit"]').forEach((button) => {
-      button.dataset.originalText = button.textContent;
-      button.disabled = true;
-      button.textContent = button.dataset.processingText || 'Processando... aguarde';
+function getDownloadFilename(disposition, fallback) {
+  if (!disposition) return fallback;
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match && utf8Match[1]) return decodeURIComponent(utf8Match[1].replace(/"/g, ''));
+  const match = disposition.match(/filename="?([^";]+)"?/i);
+  return match && match[1] ? match[1] : fallback;
+}
+
+function setAjaxStatus(form, message, type) {
+  const status = form.querySelector('[data-ajax-status]') || document.querySelector('[data-ajax-status]');
+  if (!status) return;
+  status.textContent = message || '';
+  status.classList.remove('success', 'error', 'loading');
+  if (type) status.classList.add(type);
+}
+
+function resetFormButtons(form) {
+  form.querySelectorAll('button[type="submit"]').forEach((button) => {
+    if (button.dataset.originalText) button.textContent = button.dataset.originalText;
+    button.disabled = false;
+  });
+}
+
+async function handleAjaxDownload(event, form, submitter, action) {
+  event.preventDefault();
+  const activeButton = submitter || form.querySelector('button[type="submit"]');
+  const originalText = activeButton ? activeButton.textContent : '';
+  if (activeButton) {
+    activeButton.dataset.originalText = originalText;
+    activeButton.disabled = true;
+    activeButton.textContent = activeButton.dataset.processingText || 'Processando... aguarde';
+  }
+  setAjaxStatus(form, 'Processando arquivo. Aguarde o download iniciar...', 'loading');
+
+  try {
+    const response = await fetch(action || form.action, {
+      method: (form.method || 'POST').toUpperCase(),
+      body: new FormData(form),
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
     });
+
+    if (!response.ok) {
+      let errorMessage = 'Não foi possível gerar o arquivo.';
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const data = await response.json();
+        errorMessage = data.error || data.message || errorMessage;
+      } else {
+        const text = await response.text();
+        if (text) errorMessage = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600) || errorMessage;
+      }
+      throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = getDownloadFilename(response.headers.get('content-disposition'), 'documento_gerado.docx');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+
+    form.querySelectorAll('input[type="file"]').forEach((input) => { input.value = ''; });
+    setAjaxStatus(form, 'Arquivo gerado. Você já pode selecionar novos arquivos e juntar outro documento sem recarregar a página.', 'success');
+  } catch (error) {
+    setAjaxStatus(form, error.message || 'Erro ao processar arquivo.', 'error');
+    alert(error.message || 'Erro ao processar arquivo.');
+  } finally {
+    resetFormButtons(form);
+  }
+}
+
+// Download por AJAX: mantém a página aberta após juntar arquivos e permite gerar outros sem recarregar.
+document.querySelectorAll('form').forEach((form) => {
+  form.addEventListener('submit', (event) => {
+    if (event.defaultPrevented) return;
+    const submitter = event.submitter;
+    const action = submitter?.getAttribute('formaction') || form.getAttribute('action') || window.location.href;
+    const shouldAjaxDownload = form.dataset.ajaxDownload === 'true' || submitter?.dataset.ajaxDownload === 'true' || action.includes('gerar-pgr-aet-psicossocial') || action.includes('gerar-aet-completa') || action.includes('gerar-pacote-empresa');
+    if (!shouldAjaxDownload) return;
+    if (!form.checkValidity()) return;
+    handleAjaxDownload(event, form, submitter, action);
   });
 });
+
+// V26 - geração em etapas tipo wizard com barra de progresso
+(function initWizardSteps(){
+  const form = document.getElementById('pgrSelectionForm');
+  if (!form) return;
+  const stepNodes = Array.from(form.querySelectorAll('[data-wizard-step]'));
+  const navs = Array.from(form.querySelectorAll('[data-step-nav]'));
+  if (!stepNodes.length || !navs.length) return;
+  let activeStep = Number(sessionStorage.getItem('sstWizardActiveStep') || '1');
+  if (!activeStep || activeStep < 1 || activeStep > 6) activeStep = 1;
+
+  function showStep(step){
+    activeStep = step;
+    sessionStorage.setItem('sstWizardActiveStep', String(step));
+    stepNodes.forEach((node) => {
+      const nodeStep = Number(node.dataset.wizardStep || '1');
+      node.classList.toggle('wizard-hidden', nodeStep !== step);
+    });
+    navs.forEach((nav) => {
+      const navStep = Number(nav.dataset.stepNav || '1');
+      nav.classList.toggle('is-active', navStep === step);
+      nav.classList.toggle('is-complete', navStep < step);
+    });
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  function addStepControls(){
+    for (let step=1; step<=6; step++) {
+      const panels = stepNodes.filter((node) => Number(node.dataset.wizardStep || '0') === step && node.classList.contains('step-panel'));
+      const panel = panels[panels.length-1];
+      const content = panel ? panel.querySelector('.step-content') : null;
+      if (!content || content.querySelector('.wizard-nav-controls')) continue;
+      const controls = document.createElement('div');
+      controls.className = 'wizard-nav-controls';
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'btn ghost';
+      back.textContent = step === 1 ? 'Início' : 'Voltar';
+      back.disabled = step === 1;
+      back.addEventListener('click', () => showStep(Math.max(1, step-1)));
+      const next = document.createElement('button');
+      next.type = 'button';
+      next.className = 'btn primary';
+      next.textContent = step === 6 ? 'Conferir e gerar' : 'Próximo';
+      next.addEventListener('click', () => showStep(Math.min(6, step+1)));
+      controls.appendChild(back);
+      controls.appendChild(next);
+      content.appendChild(controls);
+    }
+  }
+
+  navs.forEach((nav) => nav.addEventListener('click', () => showStep(Number(nav.dataset.stepNav || '1'))));
+  addStepControls();
+  showStep(activeStep);
+})();
+
+// V26 - motor de regras para sugerir exames com base nos riscos selecionados
+const suggestExamsBtn = document.getElementById('suggestExamsBtn');
+if (suggestExamsBtn && pgrForm) {
+  suggestExamsBtn.addEventListener('click', async () => {
+    suggestExamsBtn.disabled = true;
+    const originalText = suggestExamsBtn.textContent;
+    suggestExamsBtn.textContent = 'Sugerindo...';
+    try {
+      const response = await fetch('/api/sugerir-exames', {
+        method: 'POST',
+        body: new FormData(pgrForm),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Não foi possível sugerir exames.');
+      let total = 0;
+      Object.entries(payload.suggestions || {}).forEach(([sectorId, examIds]) => {
+        (examIds || []).forEach((examId) => {
+          const input = pgrForm.querySelector(`input[name="sector_exam_ids_${CSS.escape(sectorId)}"][value="${CSS.escape(examId)}"]`);
+          if (input && !input.checked) {
+            input.checked = true;
+            total += 1;
+            const label = input.closest('.exam-option');
+            if (label) {
+              label.classList.add('suggested-exam-highlight');
+              setTimeout(() => label.classList.remove('suggested-exam-highlight'), 2500);
+            }
+          }
+        });
+      });
+      alert(total ? `${total} exame(s) sugerido(s) e marcado(s) pelas regras técnicas.` : 'Nenhum exame novo foi sugerido. Confira se os exames estão cadastrados e se há riscos selecionados.');
+    } catch (error) {
+      alert(error.message || 'Erro ao sugerir exames.');
+    } finally {
+      suggestExamsBtn.disabled = false;
+      suggestExamsBtn.textContent = originalText;
+    }
+  });
+}

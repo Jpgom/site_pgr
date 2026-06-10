@@ -6,6 +6,7 @@ import re
 import shutil
 import tempfile
 import uuid
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ from word_generator import (
     generate_complete_pgr_docx,
     generate_complete_pcmso_docx,
     generate_complete_ltcat_docx,
+    generate_aet_docx,
     generate_descritivo_setor_docx,
     generate_pcmso_docx,
     generate_riscos_pcmso_docx,
@@ -335,6 +337,22 @@ FORM_OPTIONS = {
 }
 
 TIPOS_RISCO_LTCAT = {"FÍSICO", "QUÍMICO", "BIOLÓGICO"}
+
+# Motor simples de regras técnicas para sugestão de exames por risco.
+# O sistema não trava a geração; ele apenas marca/sugere exames já cadastrados
+# quando o nome do exame combina com palavras-chave.
+EXAM_RULES = [
+    {"keywords": ["ruído", "ruido", "audição", "audiometria"], "exams": ["audiometria"]},
+    {"keywords": ["poeira", "poeiras", "sílica", "silica", "fumos", "névoa", "nevoa", "respirável", "respiravel", "gases", "vapores"], "exams": ["espirometria", "raio x", "radiografia", "exame clínico", "exame clinico"]},
+    {"keywords": ["químico", "quimico", "produto químico", "solvente", "hidrocarboneto", "gasolina", "diesel", "óleo", "oleo", "graxa"], "exams": ["exame clínico", "exame clinico", "hemograma", "tgo", "tgp"]},
+    {"keywords": ["biológico", "biologico", "sangue", "vírus", "virus", "bactéria", "bacteria", "fungo", "parasita", "resíduo", "residuo"], "exams": ["exame clínico", "exame clinico", "hemograma", "vacinação", "vacina"]},
+    {"keywords": ["altura", "queda", "nível", "nivel", "telhado", "escada"], "exams": ["exame clínico", "exame clinico", "acuidade visual", "eletrocardiograma", "ecg"]},
+    {"keywords": ["eletricidade", "elétrico", "eletrico", "choque"], "exams": ["exame clínico", "exame clinico", "eletrocardiograma", "ecg"]},
+    {"keywords": ["calor", "temperatura", "frio", "câmara frigorífica", "camara frigorifica"], "exams": ["exame clínico", "exame clinico"]},
+    {"keywords": ["ergonômico", "ergonomico", "postura", "repetitivo", "carga", "esforço", "esforco"], "exams": ["exame clínico", "exame clinico", "anamnese ocupacional"]},
+    {"keywords": ["psicossocial", "assédio", "assedio", "estresse", "sobrecarga", "conflito", "comunicação hostil", "comunicacao hostil"], "exams": ["anamnese psicossocial", "srq", "srq-20", "exame clínico", "exame clinico"]},
+    {"keywords": ["trânsito", "transito", "motorista", "direção", "direcao"], "exams": ["exame clínico", "exame clinico", "acuidade visual"]},
+]
 
 
 def _read_json_list(path: Path) -> list[dict[str, Any]]:
@@ -748,6 +766,184 @@ def _sorted_groups() -> list[dict[str, Any]]:
 
 def _sorted_companies() -> list[dict[str, Any]]:
     return [company.to_dict() for company in Company.query.order_by(Company.nome.asc()).all()]
+
+
+def _simple_norm(value: str) -> str:
+    import unicodedata
+    value = unicodedata.normalize("NFKD", str(value or "")).lower()
+    return "".join(ch for ch in value if not unicodedata.combining(ch))
+
+
+def _extract_text_from_upload(file_storage) -> str:
+    """Extrai texto básico de DOCX/PDF para importação inteligente de laudos antigos."""
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        raise ValueError("Envie pelo menos um arquivo antigo em DOCX ou PDF.")
+    filename = secure_filename(file_storage.filename)
+    ext = Path(filename).suffix.lower()
+    with tempfile.TemporaryDirectory() as tmp:
+        tmpdir = Path(tmp)
+        path = tmpdir / f"{uuid.uuid4().hex}_{filename}"
+        file_storage.save(path)
+        if ext == ".docx":
+            from docx import Document
+            doc = Document(str(path))
+            parts: list[str] = []
+            parts.extend([p.text for p in doc.paragraphs if (p.text or "").strip()])
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        parts.append(" | ".join(cells))
+            return "\n".join(parts)
+        if ext == ".pdf":
+            import fitz
+            doc = fitz.open(str(path))
+            try:
+                return "\n".join(page.get_text("text") for page in doc)
+            finally:
+                doc.close()
+        raise ValueError("Envie apenas arquivos .docx ou .pdf para a importação inteligente.")
+
+
+def _unique_clean_lines(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" :-|\t")
+        if not cleaned or len(cleaned) < 2:
+            continue
+        key = cleaned.lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(cleaned)
+    return result
+
+
+def _smart_extract_laudo_data(text_value: str) -> dict[str, Any]:
+    """Extrai empresa/CNPJ/setores/riscos/exames com heurísticas simples e editáveis."""
+    text_value = text_value or ""
+    lines = [re.sub(r"\s+", " ", line).strip() for line in text_value.splitlines() if line.strip()]
+    cnpj_match = re.search(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b", text_value)
+    cnpj = cnpj_match.group(0) if cnpj_match else ""
+
+    empresa = ""
+    for pattern in [r"Raz[aã]o Social[:\s]+(.+)", r"EMPRESA[:\s|]+(.+)", r"Empresa[:\s]+(.+)"]:
+        match = re.search(pattern, text_value, flags=re.I)
+        if match:
+            empresa = match.group(1).strip().split("|")[0].strip()
+            break
+    if not empresa:
+        for line in lines[:25]:
+            up = line.upper()
+            if cnpj and cnpj in line:
+                continue
+            if any(skip in up for skip in ["PROGRAMA", "PCMSO", "PGR", "LTCAT", "RELATÓRIO", "LAUDO", "DATA", "FONE", "EMAIL", "ELABORAÇÃO"]):
+                continue
+            if len(line) >= 5 and ("LTDA" in up or "ME" in up or "EPP" in up):
+                empresa = line
+                break
+
+    setores: list[str] = []
+    for match in re.finditer(r"(?:SETOR(?:ES)?|DEPARTAMENTO(?:S)?|GES)\s*[:\-]?\s*([^\n;]+)", text_value, flags=re.I):
+        value = match.group(1).strip()
+        value = re.split(r"(?:\s{2,}|\||Total|Categoria|Risco|Cargo)", value)[0].strip()
+        for item in re.split(r",|/", value):
+            if 2 <= len(item.strip()) <= 60:
+                setores.append(item.strip())
+    # Captura linhas curtas em caixa alta comuns como títulos de setor.
+    for line in lines:
+        up = line.upper()
+        if line == up and 3 <= len(line) <= 45 and not any(word in up for word in ["EMPRESA", "CNPJ", "RISCO", "PGR", "PCMSO", "LTCAT", "IDENTIFICAÇÃO", "CONCLUSÃO", "PLANO", "AÇÃO", "DATA", "EMAIL", "FONE"]):
+            if re.search(r"[A-ZÁÉÍÓÚÂÊÔÃÕÇ]", line):
+                setores.append(line)
+
+    riscos: list[str] = []
+    known_risks = [risk.risco for risk in Risk.query.order_by(Risk.risco.asc()).all()]
+    norm_text = _simple_norm(text_value)
+    for risk_name in known_risks:
+        if risk_name and _simple_norm(risk_name) in norm_text:
+            riscos.append(risk_name)
+    for match in re.finditer(r"(?:Risco|Perigo|Fator de risco)\s*[:\-]\s*([^\n|;]+)", text_value, flags=re.I):
+        val = match.group(1).strip()
+        if 4 <= len(val) <= 120:
+            riscos.append(val)
+
+    exames: list[str] = []
+    known_exams = [exam.exame for exam in Exam.query.order_by(Exam.exame.asc()).all()]
+    for exam_name in known_exams:
+        if exam_name and _simple_norm(exam_name) in norm_text:
+            exames.append(exam_name)
+
+    return {
+        "empresa": empresa,
+        "cnpj": cnpj,
+        "setores": _unique_clean_lines(setores)[:80],
+        "riscos": _unique_clean_lines(riscos)[:160],
+        "exames": _unique_clean_lines(exames)[:80],
+        "texto_preview": text_value[:6000],
+    }
+
+
+def _exam_rule_suggestions_for_groups(groups: list[dict[str, Any]]) -> dict[str, list[str]]:
+    exams = _sorted_exams()
+    suggestions: dict[str, list[str]] = {}
+    for group in groups:
+        sector = group.get("sector") or {}
+        sector_id = sector.get("id", "")
+        combined = " ".join([
+            str(risk.get("risco", "")) + " " + str(risk.get("tipo_risco", "")) + " " + str(risk.get("descricao_agente", ""))
+            for risk in group.get("risks", [])
+        ])
+        norm_combined = _simple_norm(combined)
+        wanted_terms: list[str] = []
+        for rule in EXAM_RULES:
+            if any(_simple_norm(keyword) in norm_combined for keyword in rule.get("keywords", [])):
+                wanted_terms.extend(rule.get("exams", []))
+        wanted_terms = _dedupe_preserve_order(wanted_terms)
+        matched_ids: list[str] = []
+        for exam in exams:
+            exam_norm = _simple_norm(exam.get("exame", ""))
+            if any(_simple_norm(term) in exam_norm or exam_norm in _simple_norm(term) for term in wanted_terms if term):
+                matched_ids.append(exam["id"])
+        suggestions[sector_id] = _dedupe_preserve_order(matched_ids)
+    return suggestions
+
+
+def _build_generation_preview(groups: list[dict[str, Any]], company: dict[str, str]) -> dict[str, Any]:
+    total_risks = sum(len(group.get("risks", [])) for group in groups)
+    total_exams = sum(len(group.get("exams", [])) for group in groups)
+    psychosocial = sum(1 for group in groups for risk in group.get("risks", []) if str(risk.get("tipo_risco", "")).strip().upper() == "ERGONÔMICO PSICOSSOCIAL")
+    environmental = sum(1 for group in groups for risk in group.get("risks", []) if str(risk.get("tipo_risco", "")).strip().upper() in TIPOS_RISCO_LTCAT)
+    warnings = []
+    if not groups:
+        warnings.append("Nenhum setor selecionado.")
+    for group in groups:
+        setor = (group.get("sector") or {}).get("setor", "")
+        if not group.get("risks"):
+            warnings.append(f"Setor {setor}: sem riscos selecionados.")
+        if not group.get("exams"):
+            warnings.append(f"Setor {setor}: sem exames selecionados para PCMSO.")
+    if environmental == 0:
+        warnings.append("Nenhum risco ambiental selecionado para LTCAT; os setores sairão como ausência de riscos ambientais.")
+    if not company.get("data_criacao_laudo"):
+        warnings.append("Data de criação do laudo não preenchida.")
+    return {"setores": len(groups), "riscos": total_risks, "exames": total_exams, "psicossociais": psychosocial, "ambientais": environmental, "avisos": warnings}
+
+
+def _normalize_filename(value: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "").strip())
+    return value.strip("_") or "empresa"
+
+
+def _send_zip_with_cleanup(path: Path, download_name: str):
+    response = send_file(path, as_attachment=True, download_name=download_name, mimetype="application/zip")
+    @response.call_on_close
+    def _cleanup() -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return response
 
 
 def _normalize_import_header(value: Any) -> str:
@@ -1662,6 +1858,14 @@ def _send_docx_with_cleanup(path: Path, download_name: str):
     return response
 
 
+def _is_ajax_request() -> bool:
+    return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _ajax_error(message: str, status_code: int = 400):
+    return jsonify({"ok": False, "error": message}), status_code
+
+
 def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     today = datetime.now().strftime("%m/%Y")
     next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")
@@ -1734,6 +1938,94 @@ def juntar_arquivos():
     return render_template("juntar.html", companies=_sorted_companies(), today=datetime.now().strftime("%d/%m/%Y"))
 
 
+@app.route("/importar-laudo-antigo", methods=["GET", "POST"])
+def importar_laudo_antigo():
+    extracted = None
+    if request.method == "POST":
+        try:
+            file_storage = request.files.get("arquivo")
+            text_value = _extract_text_from_upload(file_storage)
+            extracted = _smart_extract_laudo_data(text_value)
+            flash("Leitura concluída. Revise os dados extraídos antes de salvar no sistema.", "success")
+        except Exception as exc:
+            flash(f"Erro ao importar laudo antigo: {exc}", "error")
+    return render_template("importar_laudo.html", extracted=extracted or {}, groups=_sorted_groups(), risks=_sorted_risks(), exams=_sorted_exams())
+
+
+@app.post("/importar-laudo-antigo/salvar")
+def salvar_importacao_laudo_antigo():
+    empresa = _field("empresa")
+    cnpj = _field("cnpj")
+    setores_text = _field("setores_extraidos")
+    riscos_text = _field("riscos_extraidos")
+    exames_text = _field("exames_extraidos")
+    group_id = _field("grupo_id") or None
+
+    if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text:
+        flash("Nenhum dado foi informado para salvar.", "error")
+        return redirect(url_for("importar_laudo_antigo"))
+
+    company_created = False
+    if empresa or cnpj:
+        company = None
+        if cnpj:
+            company = Company.query.filter(db.func.lower(Company.cnpj) == cnpj.lower()).first()
+        if not company and empresa:
+            company = Company.query.filter(db.func.lower(Company.nome) == empresa.lower()).first()
+        if not company:
+            company = Company(nome=empresa or "Empresa importada", cnpj=cnpj or "")
+            db.session.add(company)
+            company_created = True
+        else:
+            if empresa and not company.nome:
+                company.nome = empresa
+            if cnpj and not company.cnpj:
+                company.cnpj = cnpj
+
+    sector_count = 0
+    for line in _unique_clean_lines(setores_text.splitlines()):
+        existing = Sector.query.filter(db.func.lower(Sector.setor) == line.lower()).first()
+        if not existing:
+            db.session.add(Sector(setor=line, group_id=group_id, cargos=[{
+                "id": uuid.uuid4().hex,
+                "cargo": "A DEFINIR",
+                "cbo": "A DEFINIR",
+                "n_func": "1",
+                "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função.",
+            }]))
+            sector_count += 1
+
+    risk_count = 0
+    for line in _unique_clean_lines(riscos_text.splitlines()):
+        existing = Risk.query.filter(db.func.lower(Risk.risco) == line.lower()).first()
+        if not existing:
+            db.session.add(Risk(
+                risco=line,
+                acoes="Revisar ações preventivas/corretivas conforme atividade e atualizar com treinamentos NR aplicáveis.",
+                indicador="Acompanhar implementação das medidas, registros de orientação e ausência de ocorrências relacionadas.",
+                tipo_risco="ERGONÔMICO",
+                possiveis_lesoes="Revisar possíveis lesões ou agravos conforme o risco importado.",
+                fontes_circunstancias="Informação importada de laudo antigo; revisar fontes ou circunstâncias.",
+                epis="A definir conforme avaliação técnica.",
+                epcs="A definir conforme avaliação técnica.",
+                grau_severidade="MÉDIO",
+                grau_possibilidade="POSSÍVEL",
+                grau_nivel_risco="MODERADO",
+            ))
+            risk_count += 1
+
+    exam_count = 0
+    for line in _unique_clean_lines(exames_text.splitlines()):
+        existing = Exam.query.filter(db.func.lower(Exam.exame) == line.lower()).first()
+        if not existing:
+            db.session.add(Exam(exame=line, periodicidade="Conforme PCMSO"))
+            exam_count += 1
+
+    db.session.commit()
+    flash(f"Importação salva: empresa {'criada' if company_created else 'atualizada/verificada'}, {sector_count} setor(es), {risk_count} risco(s) e {exam_count} exame(s) novo(s). Revise os cadastros importados antes de gerar laudos.", "success")
+    return redirect(url_for("importar_laudo_antigo"))
+
+
 @app.post("/juntar-arquivos")
 def merge_files_avulso():
     try:
@@ -1757,7 +2049,10 @@ def merge_files_avulso():
             _build_combined_pgr_aet_psychosocial(pgr_docx, aet_docx, psicossocial_pdf, output_path, empresa, data_criacao, mes_extenso)
             return _send_docx_with_cleanup(output_path, "PGR_AET_RELATORIO_PSICOSSOCIAL.docx")
     except Exception as exc:
-        flash(f"Erro ao juntar arquivos: {exc}", "error")
+        message = f"Erro ao juntar arquivos: {exc}"
+        if _is_ajax_request():
+            return _ajax_error(message)
+        flash(message, "error")
         return redirect(url_for("juntar_arquivos"))
 
 @app.route("/grupos-riscos")
@@ -2024,12 +2319,112 @@ def _send_generated_docx(generator, selected: list[dict[str, Any]], stem: str, d
 
 
 
+@app.post("/api/sugerir-exames")
+def api_sugerir_exames():
+    groups, errors = _selected_sector_risk_groups()
+    # Para sugestão, não bloqueia setor sem risco; só retorna avisos.
+    suggestions = _exam_rule_suggestions_for_groups(groups)
+    return jsonify({"ok": True, "suggestions": suggestions, "warnings": errors, "rules": EXAM_RULES})
+
+
+@app.post("/api/previsualizar-geracao")
+def api_previsualizar_geracao():
+    groups, errors = _selected_sector_risk_groups()
+    company = _company_payload_from_form()
+    preview = _build_generation_preview(groups, company)
+    preview["erros"] = errors
+    return jsonify({"ok": True, "preview": preview})
+
+
+@app.post("/gerar-aet-completa")
+def generate_complete_aet():
+    groups, errors = _selected_sector_risk_groups()
+    company = _company_payload_from_form()
+    errors.extend(_validate_complete_report_fields(company, "AET"))
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return _render_gerar_with_current_form()
+    try:
+        empresa = company.get("empresa") or company.get("nome", "")
+        cnpj = company.get("cnpj", "")
+        data_atual = company.get("data_atual", "")
+        data_final = company.get("data_final", "")
+        _save_report_profile_from_form(auto=True)
+        return _send_generated_docx(
+            generate_aet_docx,
+            groups,
+            "aet_completa",
+            "AET_COMPLETA.docx",
+            empresa,
+            cnpj,
+            data_atual,
+            data_final,
+            company,
+        )
+    except Exception as exc:
+        flash(f"Erro ao gerar AET completa: {exc}", "error")
+        return _render_gerar_with_current_form()
+
+
+@app.post("/gerar-pacote-empresa")
+def generate_company_zip_package():
+    groups, errors = _selected_sector_risk_groups()
+    ltcat_groups, ltcat_errors = _selected_sector_ltcat_groups()
+    company = _company_payload_from_form()
+    errors.extend(ltcat_errors)
+    errors.extend(_validate_complete_report_fields(company, "pacote ZIP"))
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return _render_gerar_with_current_form()
+    try:
+        empresa = company.get("empresa") or company.get("nome", "")
+        cnpj = company.get("cnpj", "")
+        data_atual = company.get("data_atual", "")
+        data_final = company.get("data_final", "")
+        safe_empresa = _normalize_filename(empresa)
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        zip_path = OUTPUT_DIR / f"pacote_{safe_empresa}_{stamp}.zip"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            pgr_path = tmpdir / "PGR_COMPLETO.docx"
+            pcmso_path = tmpdir / "PCMSO_COMPLETO.docx"
+            ltcat_path = tmpdir / "LTCAT_COMPLETO.docx"
+            aet_path = tmpdir / "AET_COMPLETA.docx"
+            generate_complete_pgr_docx(groups, pgr_path, empresa, cnpj, data_atual, data_final, company)
+            generate_complete_pcmso_docx(groups, pcmso_path, empresa, cnpj, data_atual, data_final, company)
+            generate_complete_ltcat_docx(ltcat_groups, ltcat_path, empresa, cnpj, data_atual, data_final, company)
+            generate_aet_docx(groups, aet_path, empresa, cnpj, data_atual, data_final, company)
+            with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for path in [pgr_path, pcmso_path, ltcat_path, aet_path]:
+                    zf.write(path, arcname=path.name)
+                resumo = tmpdir / "RESUMO_DA_GERACAO.txt"
+                preview = _build_generation_preview(groups, company)
+                resumo.write_text(
+                    f"Empresa: {empresa}\nCNPJ: {cnpj}\nVigência: {data_atual} a {data_final}\n"
+                    f"Setores: {preview['setores']}\nRiscos: {preview['riscos']}\nExames: {preview['exames']}\n"
+                    f"Riscos psicossociais: {preview['psicossociais']}\nRiscos ambientais para LTCAT: {preview['ambientais']}\n"
+                    f"Avisos:\n- " + "\n- ".join(preview.get('avisos') or ['Nenhum aviso.']),
+                    encoding="utf-8"
+                )
+                zf.write(resumo, arcname="RESUMO_DA_GERACAO.txt")
+        _save_report_profile_from_form(auto=True)
+        return _send_zip_with_cleanup(zip_path, f"PACOTE_LAUDOS_{safe_empresa}.zip")
+    except Exception as exc:
+        flash(f"Erro ao gerar pacote ZIP da empresa: {exc}", "error")
+        return _render_gerar_with_current_form()
+
+
 @app.post("/gerar-pgr-aet-psicossocial")
 def generate_pgr_aet_psychosocial():
     groups, errors = _selected_sector_risk_groups()
     company = _company_payload_from_form()
     errors.extend(_validate_complete_report_fields(company, "PGR + AET + Relatório Psicossocial"))
     if errors:
+        if _is_ajax_request():
+            return _ajax_error("\n".join(errors))
         for error in errors:
             flash(error, "error")
         return _render_gerar_with_current_form()
@@ -2059,7 +2454,10 @@ def generate_pgr_aet_psychosocial():
             )
             return _send_docx_with_cleanup(output_path, "PGR_AET_RELATORIO_PSICOSSOCIAL.docx")
     except Exception as exc:
-        flash(f"Erro ao gerar PGR + AET + Relatório Psicossocial: {exc}", "error")
+        message = f"Erro ao gerar PGR + AET + Relatório Psicossocial: {exc}"
+        if _is_ajax_request():
+            return _ajax_error(message)
+        flash(message, "error")
         return _render_gerar_with_current_form()
 
 @app.post("/gerar-pgr-completo")
@@ -2163,6 +2561,7 @@ def generate_complete_ltcat():
         _save_report_profile_from_form(auto=True)
         return _send_generated_docx(
             generate_complete_ltcat_docx,
+    generate_aet_docx,
             groups,
             "ltcat_completo",
             "LTCAT_COMPLETO.docx",

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Importar laudo antigo{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Importação inteligente</p>
+    <h1>Importar PGR, PCMSO ou LTCAT antigo</h1>
+    <p class="muted">Envie um Word ou PDF antigo para o sistema tentar extrair empresa, CNPJ, setores, riscos e exames. Revise tudo antes de salvar.</p>
+  </div>
+</div>
+
+<section class="panel import-smart-panel">
+  <h2>1. Ler arquivo antigo</h2>
+  <form method="post" enctype="multipart/form-data" class="inline-import smart-import-form">
+    <label>
+      <span>Arquivo antigo (.docx ou .pdf)</span>
+      <input type="file" name="arquivo" accept=".docx,.pdf" required>
+      <small>Use preferencialmente o laudo original em Word. PDF também funciona, mas pode extrair menos campos.</small>
+    </label>
+    <button class="btn primary" type="submit">Ler arquivo</button>
+  </form>
+</section>
+
+{% if extracted %}
+<section class="panel">
+  <h2>2. Revisar e salvar no sistema</h2>
+  <p class="muted">Os dados abaixo são sugestões. Edite antes de salvar para evitar cadastro errado.</p>
+  <form method="post" action="{{ url_for('salvar_importacao_laudo_antigo') }}" class="grid-form">
+    <label>
+      <span>Empresa</span>
+      <input name="empresa" value="{{ extracted.get('empresa','') }}" placeholder="Razão social">
+    </label>
+    <label>
+      <span>CNPJ</span>
+      <input name="cnpj" value="{{ extracted.get('cnpj','') }}" placeholder="00.000.000/0000-00">
+    </label>
+    <label>
+      <span>Grupo para setores importados</span>
+      <select name="grupo_id">
+        <option value="">Sem grupo</option>
+        {% for group in groups %}
+          <option value="{{ group.id }}">{{ group.nome }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="span-2">
+      <span>Setores encontrados</span>
+      <textarea name="setores_extraidos" rows="7" placeholder="Um setor por linha">{{ extracted.get('setores', [])|join('\n') }}</textarea>
+    </label>
+    <label class="span-2">
+      <span>Riscos encontrados ou reconhecidos</span>
+      <textarea name="riscos_extraidos" rows="9" placeholder="Um risco por linha">{{ extracted.get('riscos', [])|join('\n') }}</textarea>
+      <small>Riscos novos entram como cadastro provisório para revisão técnica.</small>
+    </label>
+    <label class="span-2">
+      <span>Exames encontrados</span>
+      <textarea name="exames_extraidos" rows="6" placeholder="Um exame por linha">{{ extracted.get('exames', [])|join('\n') }}</textarea>
+    </label>
+    <div class="span-2 actions">
+      <button class="btn primary" type="submit">Salvar dados importados</button>
+      <a class="btn ghost" href="{{ url_for('importar_laudo_antigo') }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+
+<details class="panel optional-tools">
+  <summary class="panel-summary"><span>Prévia do texto extraído</span><small>Use para conferir se o arquivo foi lido corretamente</small></summary>
+  <pre class="text-preview">{{ extracted.get('texto_preview','') }}</pre>
+</details>
+{% endif %}
+{% endblock %}

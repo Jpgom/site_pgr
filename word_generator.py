@@ -1619,3 +1619,170 @@ def generate_complete_ltcat_docx(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_path))
     return output_path
+
+# ---------------------------------------------------------------------------
+# AET - ANÁLISE ERGONÔMICA DO TRABALHO
+# ---------------------------------------------------------------------------
+
+def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empresa: str = "", cnpj: str = "", data_atual: str = "", data_final: str = "", company: Mapping[str, Any] | None = None) -> Path:
+    """Gera uma AET básica e editável a partir dos setores/riscos selecionados.
+
+    O objetivo é entregar um módulo inicial de ergonomia usando a base já
+    cadastrada no sistema. O documento é propositalmente conservador e deve ser
+    revisado pelo responsável técnico quando a análise exigir medições, entrevistas
+    ou observação presencial.
+    """
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+    from docx.shared import Inches, Pt
+
+    company = company or {}
+    doc = Document()
+    for section in doc.sections:
+        section.top_margin = Inches(0.55)
+        section.bottom_margin = Inches(0.55)
+        section.left_margin = Inches(0.55)
+        section.right_margin = Inches(0.55)
+
+    styles = doc.styles
+    styles["Normal"].font.name = "Arial Narrow"
+    styles["Normal"].font.size = Pt(10)
+
+    def add_title(text: str, size: int = 18):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run(text)
+        r.bold = True
+        r.font.name = "Arial Narrow"
+        r.font.size = Pt(size)
+        return p
+
+    def add_heading(text: str):
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(4)
+        r = p.add_run(text)
+        r.bold = True
+        r.font.name = "Arial Narrow"
+        r.font.size = Pt(12)
+        return p
+
+    def add_text(text: str):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.space_after = Pt(3)
+        r = p.add_run(text)
+        r.font.name = "Arial Narrow"
+        r.font.size = Pt(10)
+        return p
+
+    def set_table_font(table):
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        for row in table.rows:
+            for cell in row.cells:
+                cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                for paragraph in cell.paragraphs:
+                    paragraph.paragraph_format.space_after = Pt(0)
+                    for run in paragraph.runs:
+                        run.font.name = "Arial Narrow"
+                        run.font.size = Pt(9)
+
+    add_title("AET – ANÁLISE ERGONÔMICA DO TRABALHO", 17)
+    add_title(empresa or "EMPRESA", 14)
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run(f"Vigência: {data_atual or '-'} a {data_final or '-'}").bold = True
+    doc.add_paragraph()
+
+    add_heading("IDENTIFICAÇÃO DA EMPRESA")
+    table = doc.add_table(rows=0, cols=2)
+    table.style = "Table Grid"
+    ident = [
+        ("EMPRESA", empresa or company.get("empresa", "")),
+        ("CNPJ", cnpj or company.get("cnpj", "")),
+        ("ENDEREÇO", company.get("endereco", "")),
+        ("BAIRRO / CIDADE", company.get("bairro_cidade", "")),
+        ("CEP", company.get("cep", "")),
+        ("CNAE", company.get("cnae", company.get("cnae1", ""))),
+        ("DESCRIÇÃO DA ATIVIDADE", company.get("descricao_atividade", company.get("descricao1", ""))),
+        ("GRAU DE RISCO", company.get("grau_risco", company.get("grau1", ""))),
+        ("FUNCIONÁRIOS", company.get("funcionarios", "")),
+        ("VIGÊNCIA", f"{data_atual or ''} – {data_final or ''}"),
+    ]
+    for label, value in ident:
+        row = table.add_row()
+        row.cells[0].text = label
+        row.cells[1].text = str(value or "")
+        for run in row.cells[0].paragraphs[0].runs:
+            run.bold = True
+    set_table_font(table)
+
+    add_heading("OBJETIVO")
+    add_text("Esta Análise Ergonômica do Trabalho tem por objetivo registrar, de forma documental, as condições ergonômicas, organizacionais e psicossociais observadas nos setores selecionados, utilizando como base as informações cadastradas no sistema de SST da empresa.")
+
+    add_heading("METODOLOGIA")
+    add_text("A análise considera a relação função x atividade, os riscos ergonômicos e psicossociais vinculados aos setores, as possíveis fontes ou circunstâncias de exposição, os agravos esperados e as medidas preventivas/corretivas indicadas. Quando necessário, recomenda-se complementação por observação presencial, entrevistas, registros fotográficos e análise detalhada da tarefa.")
+
+    add_heading("RELAÇÃO FUNÇÃO X ATIVIDADE")
+    rel = doc.add_table(rows=1, cols=5)
+    rel.style = "Table Grid"
+    headers = ["SETOR", "CARGO", "CBO", "Nº FUNC.", "DESCRIÇÃO DA ATIVIDADE"]
+    for i, h in enumerate(headers):
+        rel.rows[0].cells[i].text = h
+    for group in groups:
+        sector = group.get("sector", {})
+        cargos = sector.get("cargos", []) or []
+        if not cargos:
+            row = rel.add_row().cells
+            row[0].text = sector.get("setor", "")
+            row[1].text = "A DEFINIR"
+            row[2].text = ""
+            row[3].text = ""
+            row[4].text = ""
+        for cargo in cargos:
+            row = rel.add_row().cells
+            row[0].text = sector.get("setor", "")
+            row[1].text = str(cargo.get("cargo", ""))
+            row[2].text = str(cargo.get("cbo", ""))
+            row[3].text = str(cargo.get("n_func", ""))
+            row[4].text = str(cargo.get("descricao", ""))
+    set_table_font(rel)
+
+    doc.add_page_break()
+    add_heading("ANÁLISE ERGONÔMICA POR SETOR")
+    for group in groups:
+        sector = group.get("sector", {})
+        risks = [risk for risk in group.get("risks", []) if _normalize_option(risk.get("tipo_risco")) in {"ERGONÔMICO", "ERGONÔMICO PSICOSSOCIAL"}]
+        add_heading(f"SETOR: {sector.get('setor', '')}")
+        cargos = ", ".join([str(c.get("cargo", "")) for c in (sector.get("cargos", []) or []) if c.get("cargo")])
+        if cargos:
+            add_text(f"Cargos abrangidos: {cargos}.")
+        if not risks:
+            add_text("Não foram selecionados riscos ergonômicos ou psicossociais específicos para este setor no momento da geração. Recomenda-se manter acompanhamento das condições de trabalho e atualizar a AET quando houver alteração de processo, função, jornada ou queixas relacionadas.")
+            continue
+        tbl = doc.add_table(rows=1, cols=5)
+        tbl.style = "Table Grid"
+        for i, h in enumerate(["RISCO", "TIPO", "POSSÍVEIS AGRAVOS", "FONTES/CIRCUNSTÂNCIAS", "AÇÕES RECOMENDADAS"]):
+            tbl.rows[0].cells[i].text = h
+        for risk in risks:
+            row = tbl.add_row().cells
+            row[0].text = str(risk.get("risco", ""))
+            row[1].text = str(risk.get("tipo_risco", ""))
+            row[2].text = str(risk.get("possiveis_lesoes", ""))
+            row[3].text = str(risk.get("fontes_circunstancias", ""))
+            row[4].text = str(risk.get("acoes", ""))
+        set_table_font(tbl)
+
+    add_heading("CONCLUSÃO")
+    add_text("Com base nas informações cadastradas e nos riscos selecionados, recomenda-se a implementação e o acompanhamento das medidas preventivas/corretivas indicadas, com prioridade para a adequação das condições de trabalho, organização das atividades, orientação dos trabalhadores e controle de fatores psicossociais quando identificados. Esta AET deve ser revisada sempre que houver mudanças significativas no processo de trabalho, organização, layout, mobiliário, número de trabalhadores, queixas recorrentes ou inclusão de novos riscos.")
+
+    doc.add_paragraph()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.add_run("Responsável Técnico ___________________________________________").bold = True
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path))
+    return output_path

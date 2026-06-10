@@ -10,7 +10,7 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="logo">SST</div>
-      <div><strong>Automação SST</strong><span>PGR, PCMSO e LTCAT</span></div>
+      <div><strong>Automação SST</strong><span>PGR, PCMSO, LTCAT e AET</span></div>
     </div>
     <nav>
       <a class="{% if request.endpoint in ['cadastro', 'edit_risk'] %}active{% endif %}" href="{{ url_for('cadastro') }}">Riscos</a>
@@ -19,6 +19,7 @@
       <a class="{% if request.endpoint in ['empresas', 'create_company', 'edit_company'] %}active{% endif %}" href="{{ url_for('empresas') }}">Empresas</a>
       <a class="{% if request.endpoint in ['exames', 'create_exam', 'edit_exam'] %}active{% endif %}" href="{{ url_for('exames') }}">Exames</a>
       <a class="{% if request.endpoint == 'gerar' %}active{% endif %}" href="{{ url_for('gerar') }}">Gerar laudos</a>
+      <a class="{% if request.endpoint in ['importar_laudo_antigo', 'salvar_importacao_laudo_antigo'] %}active{% endif %}" href="{{ url_for('importar_laudo_antigo') }}">Importar antigos</a>
       <a class="{% if request.endpoint in ['juntar_arquivos'] %}active{% endif %}" href="{{ url_for('juntar_arquivos') }}">Juntar arquivos</a>
     </nav>
   </aside>

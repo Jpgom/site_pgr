@@ -11,7 +11,7 @@
 </div>
 
 <section class="panel">
-  <form method="post" enctype="multipart/form-data" action="{{ url_for('merge_files_avulso') }}" class="grid-form" data-processing-form="true">
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('merge_files_avulso') }}" class="grid-form" data-ajax-download="true">
     <label>
       <span>Empresa cadastrada</span>
       <select name="company_id" id="joinCompanySelect">
@@ -54,6 +54,7 @@
 
     <div class="form-actions span-2">
       <button class="btn primary" type="submit" data-processing-text="Juntando arquivos... aguarde">Juntar e baixar Word</button>
+      <div class="ajax-download-status" data-ajax-status aria-live="polite"></div>
     </div>
   </form>
 </section>

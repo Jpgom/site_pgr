@@ -16,7 +16,17 @@
 </div>
 
 <form id="pgrSelectionForm" method="post" enctype="multipart/form-data" class="wizard">
-  <section class="panel step-panel">
+  <div class="wizard-shell">
+    <aside class="wizard-sidebar-progress" aria-label="Etapas da geração">
+      <button type="button" class="wizard-progress-item is-active" data-step-nav="1"><strong>1</strong><span>Empresa</span></button>
+      <button type="button" class="wizard-progress-item" data-step-nav="2"><strong>2</strong><span>Dados</span></button>
+      <button type="button" class="wizard-progress-item" data-step-nav="3"><strong>3</strong><span>Setores</span></button>
+      <button type="button" class="wizard-progress-item" data-step-nav="4"><strong>4</strong><span>Riscos</span></button>
+      <button type="button" class="wizard-progress-item" data-step-nav="5"><strong>5</strong><span>Exames</span></button>
+      <button type="button" class="wizard-progress-item" data-step-nav="6"><strong>6</strong><span>Gerar</span></button>
+    </aside>
+    <div class="wizard-work">
+  <section class="panel step-panel" data-wizard-step="1">
     <div class="step-number">1</div>
     <div class="step-content">
       <h2>Empresa</h2>
@@ -65,7 +75,7 @@
     </div>
   </section>
 
-  <section class="panel step-panel">
+  <section class="panel step-panel" data-wizard-step="2">
     <div class="step-number">2</div>
     <div class="step-content">
       <h2>Dados do laudo</h2>
@@ -88,7 +98,7 @@
     </div>
   </section>
 
-  <section class="panel step-panel">
+  <section class="panel step-panel" data-wizard-step="3">
     <div class="step-number">3</div>
     <div class="step-content">
       <h2>Grupo e setores</h2>
@@ -123,7 +133,7 @@
     </div>
   </section>
 
-  <section class="panel step-panel">
+  <section class="panel step-panel" data-wizard-step="4">
     <div class="step-number">4</div>
     <div class="step-content">
       <div class="split header-line">
@@ -183,12 +193,12 @@
     </div>
   </section>
 
-  <section class="panel step-panel">
+  <section class="panel step-panel" data-wizard-step="5">
     <div class="step-number">5</div>
     <div class="step-content">
       <div class="split header-line">
         <div><h2>Exames por setor</h2><p class="muted">Usado no PCMSO. Marque os exames recomendados para cada setor.</p></div>
-        <input class="search" id="examPickerSearch" placeholder="Buscar exame...">
+        <div class="risk-header-tools"><button class="btn small ghost" type="button" id="suggestExamsBtn">Sugerir exames pelas regras</button><input class="search" id="examPickerSearch" placeholder="Buscar exame..."></div>
       </div>
       {% if sectors %}
         <div class="accordion-list">
@@ -212,14 +222,14 @@
     </div>
   </section>
 
-  <section class="panel info-panel ltcat-auto-panel">
+  <section class="panel info-panel ltcat-auto-panel" data-wizard-step="6">
     <div>
       <strong>LTCAT automática</strong>
       <p class="muted">Ao gerar a LTCAT, todos os riscos ambientais selecionados em cada setor entram automaticamente: FÍSICO, QUÍMICO e BIOLÓGICO. Se o setor não tiver risco ambiental marcado, será gerado como AUSÊNCIA DE RISCOS.</p>
     </div>
   </section>
 
-  <section class="panel step-panel merge-panel">
+  <section class="panel step-panel merge-panel" data-wizard-step="6">
     <div class="step-number">6</div>
     <div class="step-content">
       <h2>Juntar PGR + AET + Relatório Psicossocial</h2>
@@ -242,7 +252,7 @@
     </div>
   </section>
 
-  <section class="panel sticky-generate">
+  <section class="panel sticky-generate" data-wizard-step="6">
     <div>
       <strong>Gerar documentos</strong>
       <span>Os laudos serão gerados conforme a empresa, setores, riscos e exames selecionados. A última seleção da empresa fica salva automaticamente ao gerar um laudo completo.</span>
@@ -251,11 +261,14 @@
       <button class="btn primary" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">PGR completo</button>
       <button class="btn primary third" type="submit" formaction="{{ url_for('generate_complete_pcmso') }}">PCMSO completo</button>
       <button class="btn primary danger-alt" type="submit" formaction="{{ url_for('generate_complete_ltcat') }}">LTCAT completo</button>
-      <button class="btn primary dark" type="submit" formaction="{{ url_for('generate_pgr_aet_psychosocial') }}">PGR + AET + Psicossocial</button>
+      <button class="btn primary accent" type="submit" formaction="{{ url_for('generate_complete_aet') }}">AET completa</button>
+      <button class="btn primary success" type="submit" formaction="{{ url_for('generate_company_zip_package') }}">Pacote ZIP</button>
+      <button class="btn primary dark" type="submit" data-ajax-download="true" data-processing-text="Juntando arquivos... aguarde" formaction="{{ url_for('generate_pgr_aet_psychosocial') }}">PGR + AET + Psicossocial</button>
     </div>
+    <div class="ajax-download-status sticky-status" data-ajax-status aria-live="polite"></div>
   </section>
 
-  <details class="panel optional-tools">
+  <details class="panel optional-tools" data-wizard-step="6">
     <summary class="panel-summary"><span>Exportações avulsas</span><small>Para conferência técnica dos blocos isolados</small></summary>
     <div class="actions wrap">
       <button class="btn ghost" type="submit" formaction="{{ url_for('generate_action_plan') }}">Plano de Ação</button>
@@ -265,6 +278,8 @@
       <button class="btn ghost" type="submit" formaction="{{ url_for('generate_descritivo_setor') }}">Descritivo Setor</button>
     </div>
   </details>
+    </div>
+  </div>
 </form>
 
 <script type="application/json" id="reportProfilesData">{{ report_profiles|tojson }}</script>
