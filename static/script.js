@@ -114,7 +114,7 @@ if (pgrForm) {
   pgrForm.addEventListener('submit', (event) => {
     const submitter = event.submitter;
     const action = submitter ? (submitter.getAttribute('formaction') || '') : '';
-    const isComplete = action.includes('gerar-pgr-completo') || action.includes('gerar-pcmso-completo') || action.includes('gerar-ltcat-completo');
+    const isComplete = action.includes('gerar-pgr-completo') || action.includes('gerar-pcmso-completo') || action.includes('gerar-ltcat-completo') || action.includes('gerar-pgr-aet-psicossocial');
     if (!isComplete) return;
 
     const company = document.getElementById('companySelect');
@@ -138,6 +138,22 @@ if (pgrForm) {
       dataRevisao.focus();
       alert('Preencha a Data da revisão psicossocial antes de gerar. Suas marcações foram mantidas.');
       return;
+    }
+    if (action.includes('gerar-pgr-aet-psicossocial')) {
+      const aetFile = pgrForm.querySelector('input[name="aet_docx"]');
+      const psychFile = pgrForm.querySelector('input[name="psicossocial_pdf"]');
+      if (aetFile && !aetFile.value) {
+        event.preventDefault();
+        aetFile.focus();
+        alert('Envie a AET em Word para juntar com o PGR. Suas marcações foram mantidas.');
+        return;
+      }
+      if (psychFile && !psychFile.value) {
+        event.preventDefault();
+        psychFile.focus();
+        alert('Envie o Relatório Psicossocial em PDF. Suas marcações foram mantidas.');
+        return;
+      }
     }
   });
 }
@@ -409,5 +425,99 @@ if (quickRiskForm) {
         button.textContent = originalText;
       }
     }
+  });
+}
+
+
+// Configurações salvas da tela Gerar laudos
+function readReportProfiles() {
+  const node = document.getElementById('reportProfilesData');
+  if (!node) return [];
+  try { return JSON.parse(node.textContent || '[]'); } catch (_) { return []; }
+}
+const reportProfiles = readReportProfiles();
+const reportProfilesById = Object.fromEntries(reportProfiles.map((profile) => [profile.id, profile]));
+
+function filterProfileOptions() {
+  const companySelect = document.getElementById('companySelect');
+  const profileSelect = document.getElementById('profileSelect');
+  if (!companySelect || !profileSelect) return;
+  const companyId = companySelect.value;
+  let visibleCount = 0;
+  Array.from(profileSelect.options).forEach((option) => {
+    if (!option.value) return;
+    const show = !!companyId && option.dataset.company === companyId;
+    option.disabled = !show;
+    option.hidden = !show;
+    if (show) visibleCount += 1;
+  });
+  const current = profileSelect.selectedOptions[0];
+  if (current && current.value && current.disabled) profileSelect.value = '';
+  profileSelect.title = visibleCount ? `${visibleCount} configuração(ões) salvas para esta empresa` : 'Nenhuma configuração salva para esta empresa';
+}
+
+function setCheckboxesByName(name, values) {
+  const set = new Set(values || []);
+  document.querySelectorAll(`input[name="${name}"]`).forEach((box) => { box.checked = set.has(box.value); });
+}
+
+function clearGenerationSelections() {
+  document.querySelectorAll('input[name="pgr_sector_ids"], .pgr-risk-check, .pgr-exam-check, .sector-risk-group-check').forEach((box) => {
+    box.checked = false;
+    box.indeterminate = false;
+  });
+}
+
+function loadReportProfile(profileId) {
+  const profile = reportProfilesById[profileId];
+  if (!profile) return;
+  const state = profile.state || {};
+  const companySelect = document.getElementById('companySelect');
+  if (companySelect) companySelect.value = profile.company_id || state.company_id || '';
+  const dataCriacao = document.getElementById('dataCriacaoLaudo');
+  if (dataCriacao) dataCriacao.value = state.data_criacao_laudo || profile.data_criacao_laudo || '';
+  const ajuste = document.getElementById('ajustePsicossocial');
+  if (ajuste) ajuste.checked = (state.ajuste_psicossocial || profile.ajuste_psicossocial) === '1';
+  const dataRevisao = document.getElementById('dataDaRevisao');
+  if (dataRevisao) dataRevisao.value = state.data_da_revisao || profile.data_da_revisao || '';
+  const profileName = document.getElementById('profileName');
+  if (profileName) profileName.value = profile.nome || '';
+
+  clearGenerationSelections();
+  setCheckboxesByName('pgr_sector_ids', state.selected_sector_ids || []);
+  Object.entries(state.selected_risk_ids_by_sector || {}).forEach(([sectorId, riskIds]) => setCheckboxesByName(`sector_risk_ids_${sectorId}`, riskIds));
+  Object.entries(state.selected_risk_group_ids_by_sector || {}).forEach(([sectorId, groupIds]) => setCheckboxesByName(`sector_risk_group_ids_${sectorId}`, groupIds));
+  Object.entries(state.selected_exam_ids_by_sector || {}).forEach(([sectorId, examIds]) => setCheckboxesByName(`sector_exam_ids_${sectorId}`, examIds));
+
+  filterProfileOptions();
+  syncRevisionField();
+  syncSectorPickers();
+  applyCheckedRiskGroupsOnLoad();
+  updateRiskSelectionLists();
+  alert('Configuração carregada. Confira os dados e gere o laudo desejado.');
+}
+
+const companySelectForProfiles = document.getElementById('companySelect');
+if (companySelectForProfiles) companySelectForProfiles.addEventListener('change', filterProfileOptions);
+const loadProfileBtn = document.getElementById('loadProfileBtn');
+if (loadProfileBtn) {
+  loadProfileBtn.addEventListener('click', () => {
+    const profileSelect = document.getElementById('profileSelect');
+    if (!profileSelect || !profileSelect.value) {
+      alert('Selecione uma configuração salva para carregar.');
+      return;
+    }
+    loadReportProfile(profileSelect.value);
+  });
+}
+filterProfileOptions();
+
+// Preenche o nome da empresa na aba de juntar arquivos avulsos
+const joinCompanySelect = document.getElementById('joinCompanySelect');
+if (joinCompanySelect) {
+  joinCompanySelect.addEventListener('change', () => {
+    const input = document.getElementById('joinCompanyName');
+    const option = joinCompanySelect.selectedOptions[0];
+    if (input && option && option.dataset.name) input.value = option.dataset.name;
   });
 }

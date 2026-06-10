@@ -59,3 +59,32 @@ body.modal-open{overflow:hidden}
 .risk-group-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #dbe3ee;background:#fff;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:850;color:#334155;cursor:pointer;max-width:100%}
 .risk-group-chip input{width:auto;margin:0}.risk-group-chip span{margin:0;color:#334155;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.risk-group-chip em{font-style:normal;color:#64748b;font-size:11px;white-space:nowrap}.risk-group-chip:has(input:checked){border-color:#93c5fd;background:#eff6ff;color:#1d4ed8}.risk-group-chip:has(input:checked) span{color:#1d4ed8}.risk-group-chip:has(input:indeterminate){border-color:#fde68a;background:#fffbeb}
 @media(max-width:860px){.risk-group-risk-list{grid-template-columns:1fr}.risk-group-picker-head{align-items:flex-start;flex-direction:column}.risk-group-picker-head small{text-align:left}.risk-group-chip-list{display:grid;grid-template-columns:1fr}.risk-group-chip{justify-content:flex-start}}
+
+/* V22 - configurações salvas e junção de laudos */
+.saved-config-box {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 16px;
+  background: #f8fafc;
+}
+.compact-header { margin-bottom: 8px; }
+.small-actions { margin-top: 10px; }
+.merge-panel input[type="file"],
+.grid-form input[type="file"] {
+  padding: 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+}
+.btn.dark {
+  background: #111827;
+  border-color: #111827;
+  color: #fff;
+}
+.soft-note {
+  border: 1px solid #e5e7eb;
+  background: #f8fafc;
+  border-radius: 14px;
+  padding: 14px;
+}

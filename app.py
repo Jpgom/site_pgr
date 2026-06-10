@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
+import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
+from werkzeug.utils import secure_filename
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import Text, inspect, text
 
@@ -38,6 +42,8 @@ SETORES_FILE = BASE_DIR / "data" / "setores.json"
 EXAMES_FILE = BASE_DIR / "data" / "exames.json"
 RISK_IMPORT_TEMPLATE = BASE_DIR / "modelos" / "modelo_importacao_riscos.xlsx"
 SECTOR_IMPORT_TEMPLATE = BASE_DIR / "modelos" / "modelo_importacao_setores.xlsx"
+LINK_PGR_AET_TEMPLATE = BASE_DIR / "modelos" / "link_pgr_para_aet.docx"
+LINK_AET_PSICOSSOCIAL_TEMPLATE = BASE_DIR / "modelos" / "link_aet_para_psicossocial.docx"
 OUTPUT_DIR = BASE_DIR / "outputs"
 INSTANCE_DIR = BASE_DIR / "instance"
 
@@ -273,6 +279,41 @@ class Company(db.Model):
             "cnae_secundario": self.cnae2 or "",
             "descricao_atividade_secundaria": self.descricao2 or "",
             "grau_risco_secundario": self.grau2 or "",
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
+        }
+
+
+class ReportProfile(db.Model):
+    """Configuração salva da tela Gerar laudos para uma empresa.
+
+    Guarda setores, riscos, grupos de riscos, exames e datas usadas na finalização,
+    permitindo regenerar os laudos depois sem refazer toda a seleção.
+    """
+
+    __tablename__ = "report_profiles"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    company_id = db.Column(db.String(32), nullable=False, index=True)
+    nome = db.Column(db.String(255), nullable=False)
+    data_criacao_laudo = db.Column(Text, default="")
+    ajuste_psicossocial = db.Column(db.String(1), default="")
+    data_da_revisao = db.Column(Text, default="")
+    state = db.Column(db.JSON, nullable=False, default=dict)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        company = db.session.get(Company, self.company_id) if self.company_id else None
+        return {
+            "id": self.id,
+            "company_id": self.company_id,
+            "company_nome": company.nome if company else "",
+            "nome": self.nome,
+            "data_criacao_laudo": self.data_criacao_laudo or "",
+            "ajuste_psicossocial": self.ajuste_psicossocial or "",
+            "data_da_revisao": self.data_da_revisao or "",
+            "state": self.state or {},
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
         }
@@ -1202,6 +1243,8 @@ def _gerar_form_state_from_request() -> dict[str, Any]:
         "data_criacao_laudo": _field("data_criacao_laudo"),
         "ajuste_psicossocial": "1" if request.form.get("ajuste_psicossocial") == "1" else "",
         "data_da_revisao": _field("data_da_revisao"),
+        "profile_id": _field("profile_id"),
+        "profile_name": _field("profile_name"),
         "selected_sector_ids": sector_ids,
         "selected_risk_ids_by_sector": risks_by_sector,
         "selected_risk_group_ids_by_sector": risk_groups_by_sector,
@@ -1209,6 +1252,197 @@ def _gerar_form_state_from_request() -> dict[str, Any]:
     }
 
 
+
+
+def _report_profile_state_from_request() -> dict[str, Any]:
+    """Estado recarregável da tela Gerar laudos."""
+    return _gerar_form_state_from_request()
+
+
+def _sorted_report_profiles() -> list[dict[str, Any]]:
+    return [profile.to_dict() for profile in ReportProfile.query.order_by(ReportProfile.updated_at.desc()).all()]
+
+
+def _save_report_profile_from_form(auto: bool = False) -> ReportProfile | None:
+    company_id = _field("company_id")
+    if not company_id:
+        return None
+    company = db.session.get(Company, company_id)
+    if not company:
+        return None
+
+    state = _report_profile_state_from_request()
+    data_criacao = state.get("data_criacao_laudo", "")
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M")
+    default_name = f"Geração {timestamp}"
+    nome = _field("profile_name") or default_name
+
+    # Modo automático: mantém uma configuração padrão por empresa, atualizada
+    # sempre que o usuário finaliza um laudo completo.
+    profile_id = _field("profile_id")
+    profile = db.session.get(ReportProfile, profile_id) if profile_id else None
+    if profile is None and auto:
+        profile = ReportProfile.query.filter_by(company_id=company_id, nome="Última geração salva").first()
+        nome = "Última geração salva"
+
+    if profile is None:
+        profile = ReportProfile(id=uuid.uuid4().hex, company_id=company_id, nome=nome)
+        db.session.add(profile)
+    else:
+        profile.company_id = company_id
+        profile.nome = nome
+
+    profile.data_criacao_laudo = data_criacao
+    profile.ajuste_psicossocial = state.get("ajuste_psicossocial", "")
+    profile.data_da_revisao = state.get("data_da_revisao", "")
+    profile.state = state
+    profile.updated_at = datetime.utcnow()
+    db.session.commit()
+    return profile
+
+
+def _month_year_from_text(value: str) -> tuple[str, str]:
+    """Extrai mês por extenso e ano de textos como 05/06/2026, 06/2026 ou Junho/2026."""
+    months = {
+        1: "JANEIRO", 2: "FEVEREIRO", 3: "MARÇO", 4: "ABRIL", 5: "MAIO", 6: "JUNHO",
+        7: "JULHO", 8: "AGOSTO", 9: "SETEMBRO", 10: "OUTUBRO", 11: "NOVEMBRO", 12: "DEZEMBRO",
+    }
+    value = (value or "").strip()
+    year_match = re.search(r"(20\d{2})", value)
+    year = year_match.group(1) if year_match else str(datetime.now().year)
+    nums = re.findall(r"\d+", value)
+    month_num = None
+    if len(nums) >= 2:
+        # Em dd/mm/aaaa usa o segundo número; em mm/aaaa usa o primeiro.
+        month_num = int(nums[1]) if len(nums[0]) <= 2 and len(nums[1]) <= 2 else int(nums[0])
+    elif len(nums) == 1 and len(nums[0]) <= 2:
+        month_num = int(nums[0])
+    if month_num and 1 <= month_num <= 12:
+        return months[month_num], year
+    normalized = value.upper()
+    for name in months.values():
+        if name in normalized:
+            return name, year
+    return months[datetime.now().month], year
+
+
+def _replace_simple_docx_text(doc, replacements: dict[str, str]) -> None:
+    """Substituição simples preservando o estilo do primeiro run quando necessário."""
+    from copy import deepcopy
+
+    def replace_paragraph(paragraph):
+        full_text = paragraph.text or ""
+        if not any(key in full_text for key in replacements):
+            return
+        for run in paragraph.runs:
+            text_value = run.text
+            for key, val in replacements.items():
+                text_value = text_value.replace(key, val)
+            run.text = text_value
+        full_text = paragraph.text or ""
+        if any(key in full_text for key in replacements):
+            for key, val in replacements.items():
+                full_text = full_text.replace(key, val)
+            rpr = deepcopy(paragraph.runs[0]._r.rPr) if paragraph.runs and paragraph.runs[0]._r.rPr is not None else None
+            paragraph.clear()
+            run = paragraph.add_run(full_text)
+            if rpr is not None:
+                run._r.insert(0, rpr)
+
+    def walk_part(part):
+        for paragraph in part.paragraphs:
+            replace_paragraph(paragraph)
+        for table in part.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    walk_part(cell)
+
+    walk_part(doc)
+    for section in doc.sections:
+        for part in [section.header, section.footer, section.first_page_header, section.first_page_footer, section.even_page_header, section.even_page_footer]:
+            walk_part(part)
+
+
+def _prepare_link_docx(template_path: Path, output_path: Path, empresa: str, data_criacao: str, mes_extenso: str | None = None) -> Path:
+    from docx import Document
+    doc = Document(str(template_path))
+    mes, ano = _month_year_from_text(data_criacao)
+    if mes_extenso:
+        mes = mes_extenso.strip().upper()
+    replacements = {
+        "T E M NAKASHIMA - ME": empresa or "",
+        "{{EMPRESA}}": empresa or "",
+        "{{MES DE CRIAÇÃO POR EXTENSO}}": mes,
+        "{{MES DE CRIAÇÃO POR\nEXTENSO}}": mes,
+        "{{ANO DE CRIAÇÃO}}": ano,
+    }
+    _replace_simple_docx_text(doc, replacements)
+    # Os modelos enviados tinham o ano 2026 fixo; ajusta apenas nas páginas de link.
+    for paragraph in doc.paragraphs:
+        if "INCLUSÃO NO PGR EM" in (paragraph.text or "") and f"DE {ano}" not in paragraph.text:
+            for run in paragraph.runs:
+                run.text = run.text.replace("DE 2026", f"DE {ano}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path))
+    return output_path
+
+
+def _convert_pdf_to_docx(pdf_path: Path, output_docx: Path) -> Path:
+    try:
+        from pdf2docx import Converter
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("A biblioteca pdf2docx não está instalada. Verifique o requirements.txt no Render.") from exc
+    converter = Converter(str(pdf_path))
+    try:
+        converter.convert(str(output_docx), start=0, end=None)
+    finally:
+        converter.close()
+    return output_docx
+
+
+def _merge_docx_files(paths: list[Path], output_path: Path) -> Path:
+    if not paths:
+        raise ValueError("Envie pelo menos um arquivo Word para juntar.")
+    try:
+        from docx import Document
+        from docxcompose.composer import Composer
+    except Exception as exc:  # pragma: no cover
+        raise RuntimeError("As bibliotecas docxcompose/python-docx não estão instaladas. Verifique o requirements.txt no Render.") from exc
+
+    master = Document(str(paths[0]))
+    composer = Composer(master)
+    for path in paths[1:]:
+        # Garante que cada anexo comece em uma nova página.
+        composer.doc.add_page_break()
+        composer.append(Document(str(path)))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    composer.save(str(output_path))
+    return output_path
+
+
+def _save_uploaded_file(file_storage, folder: Path, allowed_exts: set[str], label: str) -> Path:
+    if not file_storage or not getattr(file_storage, "filename", ""):
+        raise ValueError(f"Envie o arquivo: {label}.")
+    filename = secure_filename(file_storage.filename)
+    ext = Path(filename).suffix.lower()
+    if ext not in allowed_exts:
+        raise ValueError(f"O arquivo {label} precisa estar em: {', '.join(sorted(allowed_exts))}.")
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{uuid.uuid4().hex}_{filename}"
+    file_storage.save(path)
+    return path
+
+
+def _build_combined_pgr_aet_psychosocial(pgr_docx: Path, aet_docx: Path, psicossocial_pdf: Path, output_path: Path, empresa: str, data_criacao: str, mes_extenso: str | None = None) -> Path:
+    workdir = output_path.parent / f"merge_{uuid.uuid4().hex}"
+    workdir.mkdir(parents=True, exist_ok=True)
+    psicossocial_docx = workdir / "relatorio_psicossocial_convertido.docx"
+    link_pgr = workdir / "link_pgr_para_aet.docx"
+    link_aet = workdir / "link_aet_para_psicossocial.docx"
+    _convert_pdf_to_docx(psicossocial_pdf, psicossocial_docx)
+    _prepare_link_docx(LINK_PGR_AET_TEMPLATE, link_pgr, empresa, data_criacao, mes_extenso)
+    _prepare_link_docx(LINK_AET_PSICOSSOCIAL_TEMPLATE, link_aet, empresa, data_criacao, mes_extenso)
+    return _merge_docx_files([pgr_docx, link_pgr, aet_docx, link_aet, psicossocial_docx], output_path)
 def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
     today = datetime.now().strftime("%m/%Y")
     next_year = datetime.now().replace(year=datetime.now().year + 1).strftime("%m/%Y")
@@ -1223,6 +1457,7 @@ def _gerar_context(form_state: dict[str, Any] | None = None) -> dict[str, Any]:
         "groups": _sorted_groups(),
         "grouped_sectors": _grouped_sectors(),
         "companies": _sorted_companies(),
+        "report_profiles": _sorted_report_profiles(),
         "options": FORM_OPTIONS,
         "today": today,
         "next_year": next_year,
@@ -1252,6 +1487,59 @@ def _validate_complete_report_fields(company: dict[str, str], label: str) -> lis
 def gerar():
     return render_template("gerar.html", **_gerar_context())
 
+
+
+
+@app.post("/salvar-configuracao-laudo")
+def save_report_profile():
+    profile = _save_report_profile_from_form(auto=False)
+    if profile:
+        flash("Configuração da empresa salva. Você poderá carregar essa seleção novamente depois.", "success")
+    else:
+        flash("Selecione uma empresa antes de salvar a configuração da geração.", "error")
+    return _render_gerar_with_current_form()
+
+
+@app.post("/configuracao-laudo/<profile_id>/excluir")
+def delete_report_profile(profile_id: str):
+    profile = db.session.get(ReportProfile, profile_id)
+    if profile:
+        db.session.delete(profile)
+        db.session.commit()
+        flash("Configuração salva excluída.", "success")
+    return redirect(url_for("gerar"))
+
+
+@app.route("/juntar-arquivos")
+def juntar_arquivos():
+    return render_template("juntar.html", companies=_sorted_companies(), today=datetime.now().strftime("%d/%m/%Y"))
+
+
+@app.post("/juntar-arquivos")
+def merge_files_avulso():
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            pgr_docx = _save_uploaded_file(request.files.get("pgr_docx"), tmpdir, {".docx"}, "PGR em Word (.docx)")
+            aet_docx = _save_uploaded_file(request.files.get("aet_docx"), tmpdir, {".docx"}, "AET em Word (.docx)")
+            psicossocial_pdf = _save_uploaded_file(request.files.get("psicossocial_pdf"), tmpdir, {".pdf"}, "Relatório Psicossocial em PDF")
+            company_id = _field("company_id")
+            company = db.session.get(Company, company_id) if company_id else None
+            empresa = _field("empresa_avulsa") or (company.nome if company else "")
+            data_criacao = _field("data_criacao_laudo")
+            mes_extenso = _field("mes_extenso")
+            if not empresa:
+                raise ValueError("Informe ou selecione a empresa para preencher as páginas intermediárias.")
+            if not data_criacao and not mes_extenso:
+                raise ValueError("Informe a data de criação do laudo ou o mês por extenso para preencher as páginas intermediárias.")
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            output_path = OUTPUT_DIR / f"pgr_aet_psicossocial_{stamp}.docx"
+            _build_combined_pgr_aet_psychosocial(pgr_docx, aet_docx, psicossocial_pdf, output_path, empresa, data_criacao, mes_extenso)
+            return send_file(output_path, as_attachment=True, download_name="PGR_AET_RELATORIO_PSICOSSOCIAL.docx", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    except Exception as exc:
+        flash(f"Erro ao juntar arquivos: {exc}", "error")
+        return redirect(url_for("juntar_arquivos"))
 
 @app.route("/grupos-riscos")
 def risk_groups():
@@ -1515,6 +1803,46 @@ def _send_generated_docx(generator, selected: list[dict[str, Any]], stem: str, d
     )
 
 
+
+
+@app.post("/gerar-pgr-aet-psicossocial")
+def generate_pgr_aet_psychosocial():
+    groups, errors = _selected_sector_risk_groups()
+    company = _company_payload_from_form()
+    errors.extend(_validate_complete_report_fields(company, "PGR + AET + Relatório Psicossocial"))
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return _render_gerar_with_current_form()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            aet_docx = _save_uploaded_file(request.files.get("aet_docx"), tmpdir, {".docx"}, "AET em Word (.docx)")
+            psicossocial_pdf = _save_uploaded_file(request.files.get("psicossocial_pdf"), tmpdir, {".pdf"}, "Relatório Psicossocial em PDF")
+            empresa = company.get("empresa") or company.get("nome", "")
+            cnpj = company.get("cnpj", "")
+            data_atual = company.get("data_atual", "")
+            data_final = company.get("data_final", "")
+            pgr_docx = tmpdir / "pgr_gerado.docx"
+            generate_complete_pgr_docx(groups, pgr_docx, empresa, cnpj, data_atual, data_final, company)
+            _save_report_profile_from_form(auto=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            output_path = OUTPUT_DIR / f"pgr_aet_psicossocial_{stamp}.docx"
+            _build_combined_pgr_aet_psychosocial(
+                pgr_docx,
+                aet_docx,
+                psicossocial_pdf,
+                output_path,
+                empresa,
+                company.get("data_criacao_laudo") or company.get("data_avaliacao") or company.get("data_atual", ""),
+                _field("mes_extenso"),
+            )
+            return send_file(output_path, as_attachment=True, download_name="PGR_AET_RELATORIO_PSICOSSOCIAL.docx", mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    except Exception as exc:
+        flash(f"Erro ao gerar PGR + AET + Relatório Psicossocial: {exc}", "error")
+        return _render_gerar_with_current_form()
+
 @app.post("/gerar-pgr-completo")
 def generate_complete_pgr():
     groups, errors = _selected_sector_risk_groups()
@@ -1529,6 +1857,7 @@ def generate_complete_pgr():
         cnpj = company.get("cnpj", "")
         data_atual = company.get("data_atual", "")
         data_final = company.get("data_final", "")
+        _save_report_profile_from_form(auto=True)
         return _send_generated_docx(
             generate_complete_pgr_docx,
             groups,
@@ -1612,6 +1941,7 @@ def generate_complete_ltcat():
         cnpj = company.get("cnpj", "")
         data_atual = company.get("data_atual", "")
         data_final = company.get("data_final", "")
+        _save_report_profile_from_form(auto=True)
         return _send_generated_docx(
             generate_complete_ltcat_docx,
             groups,
@@ -1642,6 +1972,7 @@ def generate_complete_pcmso():
         cnpj = company.get("cnpj", "")
         data_atual = company.get("data_atual", "")
         data_final = company.get("data_final", "")
+        _save_report_profile_from_form(auto=True)
         return _send_generated_docx(
             generate_complete_pcmso_docx,
             groups,

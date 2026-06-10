@@ -15,7 +15,7 @@
   </div>
 </div>
 
-<form id="pgrSelectionForm" method="post" class="wizard">
+<form id="pgrSelectionForm" method="post" enctype="multipart/form-data" class="wizard">
   <section class="panel step-panel">
     <div class="step-number">1</div>
     <div class="step-content">
@@ -34,6 +34,34 @@
       {% else %}
         <div class="empty left"><strong>Nenhuma empresa cadastrada.</strong><p>Cadastre uma empresa antes de gerar laudos completos.</p><a class="btn primary" href="{{ url_for('create_company') }}">Cadastrar empresa</a></div>
       {% endif %}
+
+      <div class="saved-config-box">
+        <div class="split header-line compact-header">
+          <div>
+            <strong>Configuração salva da empresa</strong>
+            <p class="muted small-note">Carregue uma seleção já usada ou salve a seleção atual para gerar novamente no futuro.</p>
+          </div>
+        </div>
+        <div class="inline-grid">
+          <label>
+            <span>Carregar configuração salva</span>
+            <select id="profileSelect" name="profile_id">
+              <option value="">Nenhuma configuração selecionada</option>
+              {% for profile in report_profiles %}
+                <option value="{{ profile.id }}" data-company="{{ profile.company_id }}" {% if fs.get('profile_id') == profile.id %}selected{% endif %}>{{ profile.nome }} · {{ profile.updated_at }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Nome para salvar a seleção</span>
+            <input name="profile_name" id="profileName" value="{{ fs.get('profile_name', '') }}" placeholder="Ex.: D. Castro - PGR 2026">
+          </label>
+        </div>
+        <div class="actions wrap small-actions">
+          <button class="btn small ghost" type="button" id="loadProfileBtn">Carregar seleção</button>
+          <button class="btn small" type="submit" formaction="{{ url_for('save_report_profile') }}">Salvar seleção da empresa</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -191,15 +219,39 @@
     </div>
   </section>
 
+  <section class="panel step-panel merge-panel">
+    <div class="step-number">6</div>
+    <div class="step-content">
+      <h2>Juntar PGR + AET + Relatório Psicossocial</h2>
+      <p class="muted">Use quando terminar o PGR desta empresa e quiser gerar um único Word com PGR, página de link para AET, AET, página de link para o psicossocial e o relatório psicossocial convertido de PDF para Word.</p>
+      <div class="inline-grid">
+        <label>
+          <span>AET em Word (.docx)</span>
+          <input type="file" name="aet_docx" accept=".docx">
+        </label>
+        <label>
+          <span>Relatório Psicossocial em PDF</span>
+          <input type="file" name="psicossocial_pdf" accept=".pdf">
+        </label>
+        <label>
+          <span>Mês da inclusão por extenso (opcional)</span>
+          <input name="mes_extenso" placeholder="Ex.: JUNHO">
+        </label>
+      </div>
+      <p class="muted small-note">Se o mês ficar em branco, o sistema usa a Data de criação do laudo para preencher as páginas intermediárias.</p>
+    </div>
+  </section>
+
   <section class="panel sticky-generate">
     <div>
       <strong>Gerar documentos</strong>
-      <span>Os laudos serão gerados conforme a empresa, setores, riscos e exames selecionados.</span>
+      <span>Os laudos serão gerados conforme a empresa, setores, riscos e exames selecionados. A última seleção da empresa fica salva automaticamente ao gerar um laudo completo.</span>
     </div>
     <div class="actions">
       <button class="btn primary" type="submit" formaction="{{ url_for('generate_complete_pgr') }}">PGR completo</button>
       <button class="btn primary third" type="submit" formaction="{{ url_for('generate_complete_pcmso') }}">PCMSO completo</button>
       <button class="btn primary danger-alt" type="submit" formaction="{{ url_for('generate_complete_ltcat') }}">LTCAT completo</button>
+      <button class="btn primary dark" type="submit" formaction="{{ url_for('generate_pgr_aet_psychosocial') }}">PGR + AET + Psicossocial</button>
     </div>
   </section>
 
@@ -214,6 +266,8 @@
     </div>
   </details>
 </form>
+
+<script type="application/json" id="reportProfilesData">{{ report_profiles|tojson }}</script>
 
 <div class="modal-backdrop" id="quickRiskModal" aria-hidden="true">
   <div class="modal-card quick-risk-modal" role="dialog" aria-modal="true" aria-labelledby="quickRiskTitle">

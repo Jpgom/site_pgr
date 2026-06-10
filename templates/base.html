@@ -19,6 +19,7 @@
       <a class="{% if request.endpoint in ['empresas', 'create_company', 'edit_company'] %}active{% endif %}" href="{{ url_for('empresas') }}">Empresas</a>
       <a class="{% if request.endpoint in ['exames', 'create_exam', 'edit_exam'] %}active{% endif %}" href="{{ url_for('exames') }}">Exames</a>
       <a class="{% if request.endpoint == 'gerar' %}active{% endif %}" href="{{ url_for('gerar') }}">Gerar laudos</a>
+      <a class="{% if request.endpoint in ['juntar_arquivos'] %}active{% endif %}" href="{{ url_for('juntar_arquivos') }}">Juntar arquivos</a>
     </nav>
   </aside>
 
