@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+import re
 from typing import Any, Iterable, Mapping
 
 from docx import Document
@@ -61,6 +62,24 @@ NIVEL_RISCO_COLORS = {
 
 def _normalize_option(value: Any) -> str:
     return str(value or "").strip().upper()
+
+
+def _clean_cargo_and_cbo(raw_cargo: Any, raw_cbo: Any = "") -> tuple[str, str]:
+    """Separa cargo e CBO quando laudos importados trouxerem CBO duplicado no cargo."""
+    raw_cargo = re.sub(r"\s+", " ", str(raw_cargo or "").strip())
+    raw_cbo = re.sub(r"\s+", " ", str(raw_cbo or "").strip())
+    combined = f"{raw_cargo} {raw_cbo}"
+    cbo_matches = re.findall(r"\b\d{4}-\d{2}\b", combined)
+    cbo = cbo_matches[-1] if cbo_matches else ""
+    cargo = re.split(r"\s*[–—-]\s*CBO\s*:|\bCBO\s*:", raw_cargo, maxsplit=1, flags=re.I)[0]
+    cargo = re.sub(r"\s*[–—-]\s*$", "", cargo).strip()
+    cargo = re.sub(r"\s+", " ", cargo)
+    if not cbo:
+        m = re.search(r"\b\d{4}-\d{2}\b", raw_cbo)
+        cbo = m.group(0) if m else "A DEFINIR"
+    if not cargo:
+        cargo = "A DEFINIR"
+    return cargo, cbo
 
 
 def _make_text(value: Any) -> list:
@@ -311,15 +330,17 @@ def generate_action_plan_docx(groups_or_risks: Iterable[Mapping[str, Any]], outp
 
     # Padroniza a visualização da coluna GES e demais células do plano.
     # Os setores agrupados ficam um abaixo do outro, em Arial Narrow, sem ocupar várias linhas repetidas.
-    for row in table.rows:
+    for row_index, row in enumerate(table.rows):
         for cell_index, cell in enumerate(row.cells):
             for paragraph in cell.paragraphs:
                 paragraph.paragraph_format.space_after = Pt(0)
                 for run in paragraph.runs:
                     run.font.name = "Arial Narrow"
-                    run.font.size = Pt(8 if cell_index == 0 else 7)
-                    if cell_index == 0 and row is not table.rows[0]:
-                        run.bold = True
+                    # Na coluna GES, quando o mesmo risco está em vários setores,
+                    # cada setor fica em uma linha, com leitura melhor no Word.
+                    run.font.size = Pt(10 if cell_index == 0 and row_index > 1 else 7)
+                    if cell_index == 0 and row_index > 1:
+                        run.bold = False
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -339,10 +360,11 @@ def _sanitize_sector(sector: Mapping[str, Any]) -> dict[str, Any]:
     cargos = sector.get("cargos") or []
     clean_cargos = []
     for cargo in cargos:
+        cargo_nome, cbo_limpo = _clean_cargo_and_cbo(cargo.get("cargo", ""), cargo.get("cbo", ""))
         clean_cargos.append(
             {
-                "cargo": str(cargo.get("cargo", "")).strip(),
-                "cbo": str(cargo.get("cbo", "")).strip(),
+                "cargo": cargo_nome,
+                "cbo": cbo_limpo,
                 "n_func": str(cargo.get("n_func", "")).strip(),
                 "descricao": str(cargo.get("descricao", "")).strip(),
             }
@@ -421,13 +443,17 @@ def _fill_pgr_sector_table(table_xml, sector: Mapping[str, Any], risks: list[Map
             insertion_index += 1
 
     has_psychosocial = any(_normalize_option(risk.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for risk in risks)
-    if has_psychosocial:
-        # A frase "NENHUM FATOR..." só aparece quando NÃO houver risco psicossocial no setor.
-        table_xml.remove(footer_first_row)
-    else:
-        # Quando a frase aparecer, ela deve ser a última linha da tabela, não antes das linhas finais.
-        table_xml.remove(footer_first_row)
-        table_xml.append(footer_first_row)
+    # O inventário deve sempre manter as linhas fixas:
+    # CONTROLES EXISTENTES NO GES E SUA EFICÁCIA
+    # Monitoramento da saúde do trabalhador através de exames ocupacionais.
+    # A frase de ausência psicossocial só entra quando não houver risco psicossocial
+    # e deve ser a última linha da tabela, abaixo do monitoramento.
+    phrase_template = deepcopy(footer_first_row)
+    for row in list(table_xml.findall(qn("w:tr"))):
+        if "NENHUM FATOR DE RISCO PSICOSSOCIAL" in _xml_text(row).upper():
+            table_xml.remove(row)
+    if not has_psychosocial:
+        table_xml.append(phrase_template)
 
 
 def generate_pgr_docx(groups_or_risks: Iterable[Mapping[str, Any]], output_path: str | Path) -> Path:
@@ -537,8 +563,7 @@ def _fill_relacao_cargo_row(row_xml, cargo: Mapping[str, Any]) -> None:
     cells = row_xml.findall(qn("w:tc"))
     if len(cells) < 3:
         raise ValueError("A linha de cargo do modelo Relação Função x Atividade precisa ter 3 células.")
-    cargo_text = str(cargo.get("cargo", "")).strip()
-    cbo_text = str(cargo.get("cbo", "")).strip()
+    cargo_text, cbo_text = _clean_cargo_and_cbo(cargo.get("cargo", ""), cargo.get("cbo", ""))
     func_text = str(cargo.get("n_func", "")).strip()
     desc_text = str(cargo.get("descricao", "")).strip()
 

@@ -1088,6 +1088,48 @@ def _label_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", _simple_norm(value)).strip()
 
 
+def _clean_imported_cargo_and_cbo(raw_cargo: str, raw_cbo: str = "") -> tuple[str, str]:
+    """Limpa cargo/CBO extraído de laudos antigos.
+
+    Alguns modelos antigos trazem o CBO dentro da célula do cargo como
+    "REPOSITOR (A) – CBO: CBO: 5211-25". Se isso for salvo sem limpeza, o
+    Word novo fica como "REPOSITOR (A) – CBO: CBO: 5211-25 – CBO: A DEFINIR".
+    Esta rotina separa o nome do cargo e captura o último CBO válido encontrado.
+    """
+    raw_cargo = re.sub(r"\s+", " ", str(raw_cargo or "").strip())
+    raw_cbo = re.sub(r"\s+", " ", str(raw_cbo or "").strip())
+    combined = f"{raw_cargo} {raw_cbo}"
+    cbo_matches = re.findall(r"\b\d{4}-\d{2}\b", combined)
+    cbo = cbo_matches[-1] if cbo_matches else ""
+
+    # Remove tudo a partir do primeiro marcador de CBO no texto do cargo.
+    cargo = re.split(r"\s*[–—-]\s*CBO\s*:|\bCBO\s*:", raw_cargo, maxsplit=1, flags=re.I)[0]
+    cargo = re.sub(r"\s*[–—-]\s*$", "", cargo).strip()
+    cargo = re.sub(r"\s+", " ", cargo)
+
+    if not cbo:
+        cbo_from_field = re.search(r"\b\d{4}-\d{2}\b", raw_cbo)
+        cbo = cbo_from_field.group(0) if cbo_from_field else "A DEFINIR"
+    if not cargo:
+        cargo = "A DEFINIR"
+    return cargo.upper(), cbo
+
+
+def _is_noise_import_risk_name(value: str) -> bool:
+    """Evita salvar como risco frases fixas de rodapé/controle dos inventários."""
+    key = _label_key(value)
+    noise_patterns = [
+        "controles existentes no ges e sua eficacia",
+        "monitoramento da saude do trabalhador atraves de exames ocupacionais",
+        "nenhum fator de risco psicossocial foi identificado",
+        "especificacao dos perigos fatores de risco",
+        "funcoes do grupo de exposicao similar",
+        "classificacao",
+        "aceitavel",
+    ]
+    return any(pattern in key for pattern in noise_patterns)
+
+
 def _first_value_after_label(cells: list[str], label: str) -> str:
     """Retorna o primeiro valor útil depois de uma coluna/rótulo."""
     label_norm = _label_key(label)
@@ -1165,20 +1207,21 @@ def _extract_sectors_from_docx_tables(doc) -> list[dict[str, Any]]:
             if len(cells) < 3:
                 continue
             cargo_cell = cells[0]
-            if not cargo_cell or _simple_norm(cargo_cell) in {"funcoes no setor", "funcionarios", "descricao da atividade"}:
+            cargo_label = _label_key(cargo_cell)
+            if (
+                not cargo_cell
+                or cargo_label in {"funcoes no setor", "funcionarios", "descricao da atividade"}
+                or "funcoes no setor" in cargo_label
+                or "funcionarios" in cargo_label and "descricao da atividade" in cargo_label
+            ):
                 continue
             if any(skip in cargo_cell.upper() for skip in ["NOME DO SETOR", "VIGÊNCIA", "VIGENCIA"]):
                 continue
-            cargo = cargo_cell
-            cbo = "A DEFINIR"
-            m = re.search(r"(.+?)\s*[–—-]\s*CBO\s*:\s*([\d\-]+)", cargo_cell, flags=re.I)
-            if m:
-                cargo = m.group(1).strip()
-                cbo = m.group(2).strip()
+            cargo, cbo = _clean_imported_cargo_and_cbo(cargo_cell)
             n_func = cells[1] if len(cells) > 1 else "1"
             desc = cells[2] if len(cells) > 2 else ""
             if cargo and len(cargo) <= 120:
-                cargos.append({"cargo": cargo.upper(), "cbo": cbo, "n_func": n_func or "1", "descricao": desc or "Atividade importada de laudo antigo; revisar conforme função."})
+                cargos.append({"cargo": cargo, "cbo": cbo, "n_func": n_func or "1", "descricao": desc or "Atividade importada de laudo antigo; revisar conforme função."})
         if cargos:
             sectors.append({"setor": sector_name, "cargos": cargos})
     # Remove duplicados preservando cargos
@@ -1209,7 +1252,7 @@ def _extract_risks_from_docx_tables(doc) -> list[dict[str, str]]:
     for sector_risks in all_by_sector.values():
         for risk in sector_risks:
             name = re.sub(r"\s+", " ", risk.get("risco", "")).strip()
-            if not name or len(name) < 4 or len(name) > 220:
+            if not name or len(name) < 4 or len(name) > 220 or _is_noise_import_risk_name(name):
                 continue
             key = _simple_norm(name)
             if key in seen:
@@ -1330,7 +1373,7 @@ def _extract_sector_risks_from_docx_tables(doc) -> dict[str, list[dict[str, str]
         seen: set[str] = set()
         for risk in risks:
             name = re.sub(r"\s+", " ", risk.get("risco", "")).strip()
-            if not name or len(name) < 4 or len(name) > 220:
+            if not name or len(name) < 4 or len(name) > 220 or _is_noise_import_risk_name(name):
                 continue
             key = _simple_norm(name)
             if key in seen:
@@ -2178,7 +2221,7 @@ def _sorted_imported_laudo_templates() -> list[dict[str, Any]]:
 def _upsert_import_risk(detail: dict[str, Any] | None, fallback_name: str = "") -> Risk | None:
     detail = detail or {}
     name = re.sub(r"\s+", " ", str(detail.get("risco") or fallback_name or "").strip())
-    if not name:
+    if not name or _is_noise_import_risk_name(name):
         return None
     existing = Risk.query.filter(db.func.lower(Risk.risco) == name.lower()).first()
     if existing:
@@ -2222,11 +2265,11 @@ def _upsert_import_sector(item: dict[str, Any], group_id: str | None = None) -> 
     cargos_raw = item.get("cargos") or []
     cargos: list[dict[str, str]] = []
     for cargo in cargos_raw:
-        cargo_nome = re.sub(r"\s+", " ", str(cargo.get("cargo", "")).strip()).upper() or "A DEFINIR"
+        cargo_nome, cbo_limpo = _clean_imported_cargo_and_cbo(cargo.get("cargo", ""), cargo.get("cbo", ""))
         cargos.append({
             "id": uuid.uuid4().hex,
-            "cargo": cargo_nome,
-            "cbo": str(cargo.get("cbo") or "A DEFINIR").strip(),
+            "cargo": cargo_nome or "A DEFINIR",
+            "cbo": cbo_limpo or "A DEFINIR",
             "n_func": str(cargo.get("n_func") or "1").strip(),
             "descricao": str(cargo.get("descricao") or "Atividade importada de laudo antigo; revisar e detalhar conforme função.").strip(),
         })
