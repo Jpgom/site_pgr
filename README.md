@@ -163,3 +163,10 @@ MAX_FORM_PARTS=500000
 - Converte a planilha RELFUNCGERAL (.xls exportado como HTML ou .xlsx) em PDF A4 paisagem.
 - O PDF mantém todas as colunas principais na mesma folha e usa somente: EVENTO, empresa, NOME, CPF, TIPO, STATUS, DATA, Recibo eSocial e Recibo Sefaz.
 - A coluna unidade e demais colunas extras são ignoradas automaticamente.
+
+
+## V45 - Correção Recibos eSocial
+
+- Corrigido erro: `'Page' object has no attribute 'get_text_length'`.
+- A conversão RELFUNCGERAL para PDF em A4 paisagem foi ajustada para usar medição de texto compatível com PyMuPDF.
+- Mantidas somente as colunas EVENTO, empresa, NOME, CPF, TIPO, STATUS, DATA, Recibo eSocial e Recibo Sefaz.

@@ -1902,7 +1902,8 @@ def _draw_centered_cell(page, rect, text: str, fontname: str, fontsize: float, c
     total_height = line_height * len(lines)
     y = rect.y0 + max(3, (rect.height - total_height) / 2)
     for line in lines:
-        text_width = page.get_text_length(line, fontname=fontname, fontsize=fontsize)
+        import fitz
+        text_width = fitz.get_text_length(line, fontname=fontname, fontsize=fontsize)
         x = rect.x0 + max(3, (rect.width - text_width) / 2)
         page.insert_text((x, y + fontsize), line, fontname=fontname, fontsize=fontsize, color=color)
         y += line_height
