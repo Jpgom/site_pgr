@@ -288,3 +288,4 @@ body.modal-open{overflow:hidden}
   display: block;
   color: #6b7a90;
 }
+.exam-knowledge-box{display:grid;gap:4px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:14px;padding:12px;margin:10px 0 14px;color:#1e3a8a}.exam-knowledge-box strong{font-size:13px}.exam-knowledge-box span{font-size:12px;line-height:1.45;color:#334155}

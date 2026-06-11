@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -70,11 +70,11 @@ app.config["SQLALCHEMY_DATABASE_URI"] = _database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 # Evita uploads gigantes travarem o serviço no Render. Ajuste por variável de ambiente se precisar.
-app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "512")) * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "1024")) * 1024 * 1024
 # A tela Gerar Laudos envia muitos campos quando há muitos setores, riscos, exames e dados de AET.
 # Sem estes limites maiores, o Werkzeug pode retornar: Request Entity Too Large.
-app.config["MAX_FORM_MEMORY_SIZE"] = int(os.environ.get("MAX_FORM_MEMORY_MB", "256")) * 1024 * 1024
-app.config["MAX_FORM_PARTS"] = int(os.environ.get("MAX_FORM_PARTS", "250000"))
+app.config["MAX_FORM_MEMORY_SIZE"] = int(os.environ.get("MAX_FORM_MEMORY_MB", "512")) * 1024 * 1024
+app.config["MAX_FORM_PARTS"] = int(os.environ.get("MAX_FORM_PARTS", "500000"))
 
 # Configuração da conversão visual do PDF psicossocial para Word.
 # Usamos JPEG em DPI moderado para preservar o visual sem travar por arquivos enormes.
@@ -88,7 +88,7 @@ db = SQLAlchemy(app)
 def handle_request_entity_too_large(error):
     flash(
         "O formulário ou arquivo enviado ficou maior que o limite configurado. "
-        "Tente gerar novamente. Se estiver no Render, adicione ou aumente MAX_UPLOAD_MB=512, MAX_FORM_MEMORY_MB=256 e MAX_FORM_PARTS=250000 nas variáveis de ambiente.",
+        "Tente gerar novamente. Se estiver no Render, adicione ou aumente MAX_UPLOAD_MB=1024, MAX_FORM_MEMORY_MB=512 e MAX_FORM_PARTS=500000 nas variáveis de ambiente.",
         "error",
     )
     return redirect(request.referrer or url_for("generate"))
@@ -186,6 +186,8 @@ class SectorGroup(db.Model):
 
     id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
     nome = db.Column(db.String(255), nullable=False, unique=True)
+    is_temporary = db.Column(db.Boolean, default=False, nullable=False)
+    temporary_expires_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -193,6 +195,8 @@ class SectorGroup(db.Model):
         return {
             "id": self.id,
             "nome": self.nome,
+            "is_temporary": bool(self.is_temporary),
+            "temporary_expires_at": self.temporary_expires_at.strftime("%Y-%m-%d %H:%M:%S") if self.temporary_expires_at else "",
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else "",
         }
@@ -499,18 +503,36 @@ AET_CNAE_PRESETS = [
 # O sistema não trava a geração; ele apenas marca/sugere exames já cadastrados
 # quando o nome do exame combina com palavras-chave.
 EXAM_RULES = [
-    {"keywords": ["ruído", "ruido", "audição", "audiometria"], "exams": ["audiometria"]},
-    {"keywords": ["poeira", "poeiras", "sílica", "silica", "fumos", "névoa", "nevoa", "respirável", "respiravel", "gases", "vapores"], "exams": ["espirometria", "raio x", "radiografia", "exame clínico", "exame clinico"]},
-    {"keywords": ["químico", "quimico", "produto químico", "solvente", "hidrocarboneto", "gasolina", "diesel", "óleo", "oleo", "graxa"], "exams": ["exame clínico", "exame clinico", "hemograma", "tgo", "tgp"]},
-    {"keywords": ["biológico", "biologico", "sangue", "vírus", "virus", "bactéria", "bacteria", "fungo", "parasita", "resíduo", "residuo"], "exams": ["exame clínico", "exame clinico", "hemograma", "vacinação", "vacina"]},
-    {"keywords": ["altura", "queda", "nível", "nivel", "telhado", "escada"], "exams": ["exame clínico", "exame clinico", "acuidade visual", "eletrocardiograma", "ecg"]},
-    {"keywords": ["eletricidade", "elétrico", "eletrico", "choque"], "exams": ["exame clínico", "exame clinico", "eletrocardiograma", "ecg"]},
-    {"keywords": ["calor", "temperatura", "frio", "câmara frigorífica", "camara frigorifica"], "exams": ["exame clínico", "exame clinico"]},
-    {"keywords": ["ergonômico", "ergonomico", "postura", "repetitivo", "carga", "esforço", "esforco"], "exams": ["exame clínico", "exame clinico", "anamnese ocupacional"]},
-    {"keywords": ["psicossocial", "assédio", "assedio", "estresse", "sobrecarga", "conflito", "comunicação hostil", "comunicacao hostil"], "exams": ["anamnese psicossocial", "srq", "srq-20", "exame clínico", "exame clinico"]},
-    {"keywords": ["trânsito", "transito", "motorista", "direção", "direcao"], "exams": ["exame clínico", "exame clinico", "acuidade visual"]},
+    {"keywords": ["ruído", "ruido", "audição", "audicao", "nível de pressão sonora", "pressao sonora"], "exams": ["Audiometria", "Exame clínico"]},
+    {"keywords": ["poeira", "poeiras", "sílica", "silica", "fumos", "névoa", "nevoa", "respirável", "respiravel", "gases", "vapores"], "exams": ["Espirometria", "Raio X de tórax", "Exame clínico"]},
+    {"keywords": ["químico", "quimico", "produto químico", "saneante", "solvente", "hidrocarboneto", "gasolina", "diesel", "óleo", "oleo", "graxa"], "exams": ["Exame clínico", "Hemograma", "TGO", "TGP"]},
+    {"keywords": ["biológico", "biologico", "sangue", "vírus", "virus", "bactéria", "bacteria", "fungo", "parasita", "resíduo", "residuo", "infectocontagioso"], "exams": ["Exame clínico", "Hemograma", "Cartão de vacina"]},
+    {"keywords": ["altura", "queda", "nível", "nivel", "telhado", "escada"], "exams": ["Exame clínico", "Acuidade visual", "Eletrocardiograma"]},
+    {"keywords": ["eletricidade", "elétrico", "eletrico", "choque"], "exams": ["Exame clínico", "Eletrocardiograma"]},
+    {"keywords": ["calor", "temperatura elevada", "frio", "câmara frigorífica", "camara frigorifica"], "exams": ["Exame clínico"]},
+    {"keywords": ["ergonômico", "ergonomico", "postura", "repetitivo", "carga", "esforço", "esforco", "levantamento", "transporte manual"], "exams": ["Exame clínico", "Anamnese ocupacional"]},
+    {"keywords": ["psicossocial", "assédio", "assedio", "estresse", "sobrecarga", "conflito", "comunicação hostil", "comunicacao hostil", "baixa autonomia"], "exams": ["Anamnese psicossocial ocupacional", "SRQ-20", "Exame clínico"]},
+    {"keywords": ["trânsito", "transito", "motorista", "direção", "direcao", "veículo", "veiculo"], "exams": ["Exame clínico", "Acuidade visual"]},
 ]
 
+# Exames complementares padrão usados pelo motor de regras.
+# São cadastrados automaticamente se ainda não existirem, para que o botão
+# “Sugerir exames pelas regras” funcione mesmo em bases novas.
+STANDARD_COMPLEMENTARY_EXAMS = [
+    {"exame": "Exame clínico", "periodicidade": "Conforme PCMSO", "admissional": "Sim", "periodico": "Sim", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Sim"},
+    {"exame": "Audiometria", "periodicidade": "Conforme exposição a ruído", "admissional": "Sim, quando exposto", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Espirometria", "periodicidade": "Conforme exposição respiratória", "admissional": "Sim, quando exposto", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Acuidade visual", "periodicidade": "Conforme função e risco", "admissional": "Sim, quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Eletrocardiograma", "periodicidade": "Conforme avaliação médica e risco", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Hemograma", "periodicidade": "Conforme exposição e critério médico", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "TGO", "periodicidade": "Conforme exposição química e critério médico", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "TGP", "periodicidade": "Conforme exposição química e critério médico", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Raio X de tórax", "periodicidade": "Conforme exposição respiratória e critério médico", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Anamnese ocupacional", "periodicidade": "Conforme PCMSO", "admissional": "Sim", "periodico": "Sim", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Sim"},
+    {"exame": "Anamnese psicossocial ocupacional", "periodicidade": "Conforme avaliação psicossocial ocupacional", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "SRQ-20", "periodicidade": "Conforme rastreamento psicossocial ocupacional", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+    {"exame": "Cartão de vacina", "periodicidade": "Conforme risco biológico e orientação médica", "admissional": "Quando aplicável", "periodico": "Conforme PCMSO", "retorno": "Quando aplicável", "mudanca": "Quando aplicável", "demissional": "Quando aplicável"},
+]
 
 def _read_json_list(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
@@ -627,6 +649,8 @@ def _ensure_schema_columns() -> None:
                 db.session.execute(text(f"ALTER TABLE risks ALTER COLUMN {column_name} TYPE TEXT"))
 
     add_column("sectors", "group_id VARCHAR(32)")
+    add_column("sector_groups", "is_temporary BOOLEAN DEFAULT FALSE NOT NULL")
+    add_column("sector_groups", "temporary_expires_at TIMESTAMP")
     add_column("risks", "ltcat_meio_propagacao TEXT")
     add_column("risks", "ltcat_insalubridade TEXT")
     add_column("risks", "ltcat_grau_insalubridade TEXT")
@@ -648,10 +672,69 @@ def _ensure_schema_columns() -> None:
     db.session.commit()
 
 
+def _ensure_standard_complementary_exams() -> None:
+    """Garante uma base mínima de exames complementares para o motor de regras."""
+    created = False
+    for item in STANDARD_COMPLEMENTARY_EXAMS:
+        name = str(item.get("exame", "")).strip()
+        if not name:
+            continue
+        existing = Exam.query.filter(db.func.lower(Exam.exame) == name.lower()).first()
+        if existing:
+            # Não sobrescreve cadastros editados pelo usuário. Só completa campos vazios.
+            for key in ["periodicidade", "admissional", "periodico", "retorno", "mudanca", "demissional"]:
+                if not getattr(existing, key, None) and item.get(key):
+                    setattr(existing, key, item.get(key))
+                    created = True
+            continue
+        exam = Exam(
+            exame=name,
+            periodicidade=item.get("periodicidade", "Conforme PCMSO"),
+            admissional=item.get("admissional", ""),
+            periodico=item.get("periodico", ""),
+            retorno=item.get("retorno", ""),
+            mudanca=item.get("mudanca", ""),
+            demissional=item.get("demissional", ""),
+        )
+        db.session.add(exam)
+        created = True
+    if created:
+        db.session.commit()
+
+
+def _cleanup_expired_temp_import_groups() -> None:
+    """Remove grupos/setores temporários antigos criados ao aplicar modelos importados."""
+    now = datetime.utcnow()
+    expired = SectorGroup.query.filter(
+        SectorGroup.is_temporary == True,  # noqa: E712
+        SectorGroup.temporary_expires_at != None,  # noqa: E711
+        SectorGroup.temporary_expires_at < now,
+    ).all()
+    if not expired:
+        return
+    for group in expired:
+        Sector.query.filter_by(group_id=group.id).delete()
+        db.session.delete(group)
+    db.session.commit()
+
+
+def _create_temp_import_group(company: Company, template: ImportedLaudoTemplate) -> SectorGroup:
+    base = f"TEMP - {company.nome or 'EMPRESA'} - {template.nome or 'MODELO'}"
+    short = re.sub(r"\s+", " ", base).strip()[:180]
+    suffix = datetime.now().strftime("%d%m%y%H%M")
+    name = f"{short} - {suffix}"
+    group = SectorGroup(nome=name, is_temporary=True, temporary_expires_at=datetime.utcnow() + timedelta(hours=24))
+    db.session.add(group)
+    db.session.flush()
+    return group
+
+
 def init_database() -> None:
     db.create_all()
     _ensure_schema_columns()
     _migrate_json_files_if_needed()
+    _ensure_standard_complementary_exams()
+    _cleanup_expired_temp_import_groups()
 
 
 def _field(name: str) -> str:
@@ -2699,6 +2782,7 @@ def _validate_complete_report_fields(company: dict[str, str], label: str) -> lis
 
 @app.route("/gerar")
 def gerar():
+    _cleanup_expired_temp_import_groups()
     profile_id = request.args.get("profile_id", "").strip()
     if profile_id:
         profile = db.session.get(ReportProfile, profile_id)
@@ -2728,8 +2812,23 @@ def apply_imported_template():
     if not template:
         flash("Selecione um modelo importado de laudo antigo para aplicar.", "error")
         return _render_gerar_with_current_form()
+    temp_group = None
+    if not group_id:
+        # Quando o usuário não escolhe um grupo fixo, os setores importados vão para
+        # um grupo temporário exclusivo dessa aplicação. Isso organiza a geração e
+        # evita poluir os grupos permanentes de setores.
+        temp_group = _create_temp_import_group(company, template)
+        group_id = temp_group.id
     profile = _apply_imported_template_to_company(template, company_id, group_id=group_id)
-    flash("Modelo importado aplicado à empresa. Os setores, cargos, riscos e exames foram carregados para revisão antes de gerar os laudos.", "success")
+    if temp_group:
+        state = dict(profile.state or {})
+        state["temporary_sector_group_id"] = temp_group.id
+        state["temporary_sector_group_name"] = temp_group.nome
+        profile.state = state
+        db.session.commit()
+        flash("Modelo importado aplicado em grupo temporário. Ele fica disponível para esta geração e será removido automaticamente depois.", "success")
+    else:
+        flash("Modelo importado aplicado à empresa. Os setores, cargos, riscos e exames foram carregados para revisão antes de gerar os laudos.", "success")
     return redirect(url_for("gerar", profile_id=profile.id))
 
 

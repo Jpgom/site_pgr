@@ -69,15 +69,15 @@
           <label>
             <span>Grupo onde os setores ficarão</span>
             <select name="imported_template_group_id">
-              <option value="">Manter sem grupo / usar existente</option>
-              {% for group in groups %}
+              <option value="">Criar grupo temporário automático</option>
+              {% for group in groups if not group.is_temporary %}
                 <option value="{{ group.id }}">{{ group.nome }}</option>
               {% endfor %}
             </select>
           </label>
         </div>
         <div class="actions wrap small-actions">
-          <button class="btn small primary" type="submit" formaction="{{ url_for('apply_imported_template') }}">Aplicar modelo nesta empresa</button>
+          <button class="btn small primary" id="applyImportedTemplateBtn" type="submit" formnovalidate formaction="{{ url_for('apply_imported_template') }}">Aplicar modelo nesta empresa</button>
         </div>
       </div>
 
@@ -235,6 +235,10 @@
       <div class="split header-line">
         <div><h2>Exames por setor</h2><p class="muted">Usado no PCMSO. Marque os exames recomendados para cada setor.</p></div>
         <div class="risk-header-tools"><button class="btn small ghost" type="button" id="suggestExamsBtn">Sugerir exames pelas regras</button><input class="search" id="examPickerSearch" placeholder="Buscar exame..."></div>
+      </div>
+      <div class="exam-knowledge-box">
+        <strong>Conhecimento técnico integrado</strong>
+        <span>O sistema cruza os riscos selecionados com complementares sugeridos, como: ruído → audiometria; poeiras/fumos → espirometria; químicos → hemograma/TGO/TGP; altura/eletricidade → ECG; psicossocial → anamnese psicossocial/SRQ-20.</span>
       </div>
       {% if sectors %}
         <div class="accordion-list">

@@ -31,6 +31,36 @@ attachSearch('pgrSectorSearch', '#pgrSectorList .sector-option');
 attachSearch('riskPickerSearch', '.risk-option');
 attachSearch('examPickerSearch', '.exam-option');
 
+// Máscara automática para datas: o usuário digita somente números e o sistema insere as barras.
+function maskDateValue(raw) {
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+function attachDateMasks() {
+  const selectors = [
+    '#dataCriacaoLaudo',
+    '#dataDaRevisao',
+    'input[name="data_atual"]',
+    'input[name="data_final"]',
+    'input[name="data_avaliacao"]',
+    'input[name="data_criacao_laudo"]',
+    'input[name="data_da_revisao"]'
+  ];
+  document.querySelectorAll(selectors.join(',')).forEach((input) => {
+    input.setAttribute('inputmode', 'numeric');
+    input.setAttribute('maxlength', '10');
+    input.addEventListener('input', () => {
+      const before = input.value;
+      const masked = maskDateValue(before);
+      if (before !== masked) input.value = masked;
+    });
+  });
+}
+attachDateMasks();
+
+
 function selectedPgrSectorIds() {
   return new Set(Array.from(document.querySelectorAll('input[name="pgr_sector_ids"]:checked')).map((box) => box.value));
 }
@@ -931,6 +961,20 @@ if (suggestExamsBtn && pgrForm) {
     }
     tick();
   }
+
+  // Garante que o botão funcione mesmo com campos obrigatórios em outras etapas do wizard.
+  // Para aplicar modelo importado, só precisamos de empresa + modelo; data do laudo/exames/AET
+  // serão preenchidos depois, então desativamos a validação nativa apenas neste envio.
+  const applyBtn = document.getElementById('applyImportedTemplateBtn');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', function(){
+      const form = document.getElementById('pgrSelectionForm');
+      if (!form) return;
+      form.noValidate = true;
+      applyBtn.setAttribute('formnovalidate', 'formnovalidate');
+    });
+  }
+
   document.addEventListener('submit', function(ev){
     const form = ev.target;
     if (!form || !form.matches || !form.matches('#pgrSelectionForm')) return;

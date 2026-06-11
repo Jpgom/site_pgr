@@ -85,7 +85,7 @@ A junção PGR + AET + Relatório Psicossocial agora insere o PDF psicossocial c
   - `PSICOSSOCIAL_RENDER_DPI` padrão `135`.
   - `PSICOSSOCIAL_JPEG_QUALITY` padrão `82`.
   - `PSICOSSOCIAL_MAX_PAGES` padrão `80`.
-  - `MAX_UPLOAD_MB` padrão `120`.
+  - `MAX_UPLOAD_MB` padrão `1024`.
 
 ## V25 - Junção sem recarregar e modelos atualizados
 
@@ -114,7 +114,7 @@ A versão V31 aumenta os limites internos do Flask/Werkzeug para formulários gr
 
 Variáveis opcionais no Render:
 
-- `MAX_UPLOAD_MB=120`
+- `MAX_UPLOAD_MB=1024`
 - `MAX_FORM_MEMORY_MB=80`
 - `MAX_FORM_PARTS=50000`
 
@@ -129,9 +129,9 @@ Use `MAX_FORM_MEMORY_MB` maior se houver muitas empresas/setores/riscos/exames/A
 Variáveis recomendadas no Render:
 
 ```text
-MAX_UPLOAD_MB=512
-MAX_FORM_MEMORY_MB=256
-MAX_FORM_PARTS=250000
+MAX_UPLOAD_MB=1024
+MAX_FORM_MEMORY_MB=512
+MAX_FORM_PARTS=500000
 ```
 
 ## V34 - Modelos reutilizáveis de laudos antigos
