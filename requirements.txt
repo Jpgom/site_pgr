@@ -9,3 +9,5 @@ docxcompose==1.4.0
 PyMuPDF==1.26.7
 
 setuptools==75.8.0
+
+xlrd==2.0.1

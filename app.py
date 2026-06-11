@@ -23,6 +23,11 @@ try:
 except Exception:  # pragma: no cover - usado apenas se a dependência não estiver instalada
     load_workbook = None
 
+try:
+    import xlrd
+except Exception:  # pragma: no cover - usado apenas se a dependência não estiver instalada
+    xlrd = None
+
 from word_generator import (
     NIVEL_RISCO_COLORS,
     POSSIBILIDADE_COLORS,
@@ -1793,6 +1798,14 @@ def _parse_html_table_rows(path: Path) -> list[list[str]]:
     return parser.rows
 
 
+def _html_text(path: Path) -> str:
+    raw = path.read_bytes()
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1", errors="ignore")
+
+
 def _parse_xlsx_table_rows(path: Path) -> list[list[str]]:
     if load_workbook is None:
         raise RuntimeError("A biblioteca openpyxl não está instalada. Verifique o requirements.txt no Render.")
@@ -1813,46 +1826,146 @@ def _parse_xlsx_table_rows(path: Path) -> list[list[str]]:
     return rows
 
 
-def _read_receipt_spreadsheet(path: Path) -> list[dict[str, str]]:
-    """Lê RELFUNCGERAL (.xls HTML ou .xlsx) e retorna somente as colunas usadas no PDF."""
-    raw_head = path.read_bytes()[:512].lstrip().lower()
-    ext = path.suffix.lower()
-    if raw_head.startswith(b"<!doctype") or raw_head.startswith(b"<html") or b"<table" in raw_head:
-        rows = _parse_html_table_rows(path)
-    elif ext == ".xlsx":
-        rows = _parse_xlsx_table_rows(path)
-    else:
-        raise ValueError("Arquivo não reconhecido. Envie a planilha RELFUNCGERAL em .xls exportado do sistema ou .xlsx.")
+def _parse_binary_xls_table_rows(path: Path) -> list[list[str]]:
+    if xlrd is None:
+        raise RuntimeError("A biblioteca xlrd não está instalada. Verifique o requirements.txt no Render.")
+    wb = xlrd.open_workbook(str(path))
+    sheet = wb.sheet_by_index(0)
+    rows: list[list[str]] = []
+    for r in range(sheet.nrows):
+        values: list[str] = []
+        for c in range(sheet.ncols):
+            value = sheet.cell_value(r, c)
+            ctype = sheet.cell_type(r, c)
+            if ctype == xlrd.XL_CELL_EMPTY:
+                values.append("")
+            elif ctype == xlrd.XL_CELL_DATE:
+                try:
+                    dt = xlrd.xldate_as_datetime(value, wb.datemode)
+                    values.append(dt.strftime("%d/%m/%Y"))
+                except Exception:
+                    values.append(str(value).strip())
+            elif isinstance(value, float) and value.is_integer():
+                values.append(str(int(value)))
+            else:
+                values.append(str(value).strip())
+        if any(values):
+            rows.append(values)
+    return rows
 
-    if not rows:
-        raise ValueError("Não encontrei nenhuma tabela na planilha enviada.")
 
+def _receipt_header_map(rows: list[list[str]]) -> tuple[int | None, dict[str, int]]:
     header_index = None
     header_map: dict[str, int] = {}
     required = {key for key, _ in RECEIPT_PDF_COLUMNS}
-    for idx, row in enumerate(rows[:25]):
+    aliases = {
+        "reciboesocial": {"reciboesocial", "reciboeventoesocial", "reciboe_social"},
+        "recibosefaz": {"recibosefaz", "recibosefaze", "recibosefaz"},
+        "empresa": {"empresa", "razaosocial"},
+    }
+    reverse_alias: dict[str, str] = {}
+    for canonical in required:
+        reverse_alias[canonical] = canonical
+    for canonical, values in aliases.items():
+        for value in values:
+            reverse_alias[value] = canonical
+    for idx, row in enumerate(rows[:50]):
         normed = [_receipt_norm_header(cell) for cell in row]
-        found = {name for name in normed if name in required}
+        found = {reverse_alias[name] for name in normed if name in reverse_alias and reverse_alias[name] in required}
         if len(found) >= 5:
             header_index = idx
             for col_idx, name in enumerate(normed):
-                if name in required and name not in header_map:
-                    header_map[name] = col_idx
+                canonical = reverse_alias.get(name)
+                if canonical in required and canonical not in header_map:
+                    header_map[canonical] = col_idx
             break
+    return header_index, header_map
+
+
+def _receipt_rows_from_raw_rows(rows: list[list[str]]) -> list[dict[str, str]]:
+    if not rows:
+        raise ValueError("Não encontrei nenhuma tabela na planilha enviada.")
+    header_index, header_map = _receipt_header_map(rows)
     if header_index is None:
         raise ValueError("Não localizei o cabeçalho da planilha. Confirme se ela possui as colunas EVENTO, empresa, NOME, CPF, TIPO, STATUS, DATA, Recibo eSocial e Recibo Sefaz.")
-
     data_rows: list[dict[str, str]] = []
     for row in rows[header_index + 1:]:
         item: dict[str, str] = {}
         for key, _label in RECEIPT_PDF_COLUMNS:
             col_idx = header_map.get(key)
             item[key] = str(row[col_idx]).strip() if col_idx is not None and col_idx < len(row) else ""
-        if any(item.values()):
+        # Evita salvar linhas de navegação/abas e linhas completamente vazias.
+        if any(item.values()) and any(item.get(k) for k in ("evento", "nome", "reciboesocial", "recibosefaz")):
             data_rows.append(item)
     if not data_rows:
         raise ValueError("A planilha foi lida, mas não encontrei linhas de recibos para converter.")
     return data_rows
+
+
+def _read_receipt_rows_from_file(path: Path, *, allow_linked_sheet: bool = True) -> list[dict[str, str]]:
+    raw = path.read_bytes()
+    raw_head = raw[:1024].lstrip().lower()
+    ext = path.suffix.lower()
+
+    # XLS exportado como HTML direto pelo sistema: possui a tabela completa no próprio arquivo.
+    if raw_head.startswith(b"<!doctype") or raw_head.startswith(b"<html") or b"<table" in raw_head:
+        html = _html_text(path)
+        rows = _parse_html_table_rows(path)
+        try:
+            return _receipt_rows_from_raw_rows(rows)
+        except ValueError as exc:
+            # Alguns arquivos salvos pelo Excel como "Página da Web" são apenas um frameset e
+            # apontam para RELFUNCGERAL..._arquivos/sheet001.htm. Se esse arquivo estiver junto
+            # no upload (por ZIP), tentamos ler a planilha real. Se não estiver, damos mensagem clara.
+            hrefs = re.findall(r'(?:WorksheetSource\s+HRef=|<frame\s+src=)["\']?([^"\'>\s]+)', html, flags=re.IGNORECASE)
+            if allow_linked_sheet and hrefs:
+                from urllib.parse import unquote
+                for href in hrefs:
+                    linked = (path.parent / unquote(href)).resolve()
+                    try:
+                        linked.relative_to(path.parent.resolve())
+                    except ValueError:
+                        continue
+                    if linked.exists() and linked.is_file():
+                        return _read_receipt_rows_from_file(linked, allow_linked_sheet=False)
+                raise ValueError(
+                    "Esse .xls não contém a tabela de recibos dentro dele; ele é apenas uma página índice do Excel e aponta para uma pasta '_arquivos/sheet001.htm'. "
+                    "Para formatar, salve a planilha como .xlsx e envie novamente, ou compacte o arquivo .xls junto com a pasta '_arquivos' em um .zip e envie o .zip."
+                ) from exc
+            raise
+
+    if ext == ".xlsx":
+        return _receipt_rows_from_raw_rows(_parse_xlsx_table_rows(path))
+
+    if ext == ".xls":
+        return _receipt_rows_from_raw_rows(_parse_binary_xls_table_rows(path))
+
+    raise ValueError("Arquivo não reconhecido. Envie .xls, .xlsx ou .zip contendo a planilha RELFUNCGERAL.")
+
+
+def _read_receipt_spreadsheet(path: Path) -> list[dict[str, str]]:
+    """Lê RELFUNCGERAL (.xls HTML, .xls binário, .xlsx ou .zip) e retorna somente as colunas usadas no PDF."""
+    ext = path.suffix.lower()
+    if ext == ".zip":
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            try:
+                with zipfile.ZipFile(path) as zf:
+                    zf.extractall(tmpdir)
+            except zipfile.BadZipFile as exc:
+                raise ValueError("Não consegui abrir o ZIP enviado. Compacte novamente o .xls junto com a pasta '_arquivos'.") from exc
+            candidates = [p for p in tmpdir.rglob("*") if p.is_file() and p.suffix.lower() in {".xls", ".xlsx", ".htm", ".html"}]
+            # Prioriza sheet*.htm porque é onde o Excel coloca os dados quando salva como página da web com frames.
+            candidates.sort(key=lambda p: (0 if "sheet" in p.name.lower() else 1, len(str(p))))
+            last_error = ""
+            for candidate in candidates:
+                try:
+                    return _read_receipt_rows_from_file(candidate)
+                except Exception as exc:  # tenta o próximo arquivo do ZIP
+                    last_error = str(exc)
+            raise ValueError(f"Não encontrei uma tabela válida de recibos dentro do ZIP. Último erro: {last_error}")
+
+    return _read_receipt_rows_from_file(path)
 
 
 def _wrap_pdf_text(page, text: str, max_width: float, fontname: str, fontsize: float) -> list[str]:  # noqa: ANN001
@@ -3347,8 +3460,8 @@ def recibos_esocial():
                 planilha = _save_uploaded_file(
                     request.files.get("planilha"),
                     tmpdir,
-                    {".xls", ".xlsx"},
-                    "Planilha de recibos RELFUNCGERAL (.xls ou .xlsx)",
+                    {".xls", ".xlsx", ".zip"},
+                    "Planilha de recibos RELFUNCGERAL (.xls, .xlsx ou .zip)",
                 )
                 rows = _read_receipt_spreadsheet(planilha)
                 empresa = rows[0].get("empresa", "RECIBOS") if rows else "RECIBOS"

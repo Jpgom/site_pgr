@@ -170,3 +170,11 @@ MAX_FORM_PARTS=500000
 - Corrigido erro: `'Page' object has no attribute 'get_text_length'`.
 - A conversão RELFUNCGERAL para PDF em A4 paisagem foi ajustada para usar medição de texto compatível com PyMuPDF.
 - Mantidas somente as colunas EVENTO, empresa, NOME, CPF, TIPO, STATUS, DATA, Recibo eSocial e Recibo Sefaz.
+
+
+## V46 - Recibos eSocial robusto
+
+- Corrige leitura de planilhas RELFUNCGERAL exportadas como Excel HTML com frameset.
+- Quando o .xls só aponta para a pasta `_arquivos/sheet001.htm`, o sistema exibe orientação clara em vez de falhar silenciosamente.
+- A aba Recibos eSocial agora aceita `.zip` contendo o `.xls` e a pasta `_arquivos`, além de `.xls` completo e `.xlsx`.
+- Adiciona suporte a `.xls` binário via `xlrd`.
