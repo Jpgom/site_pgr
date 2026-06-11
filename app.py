@@ -3036,6 +3036,50 @@ def delete_report_profile(profile_id: str):
     return redirect(url_for("gerar"))
 
 
+@app.post("/juntar-arquivos")
+def merge_files_avulso():
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            pgr_docx = _save_uploaded_file(request.files.get("pgr_docx"), tmpdir, {".docx"}, "PGR em Word (.docx)")
+            aet_docx = _save_uploaded_file(request.files.get("aet_docx"), tmpdir, {".docx"}, "AET em Word (.docx)")
+            psicossocial_pdf = _save_uploaded_file(request.files.get("psicossocial_pdf"), tmpdir, {".pdf"}, "Relatório Psicossocial em PDF")
+
+            company = None
+            company_id = _field("company_id")
+            if company_id:
+                company = db.session.get(Company, company_id)
+
+            empresa = _field("empresa_avulsa")
+            if company and not empresa:
+                empresa = company.nome or ""
+            empresa = empresa or "EMPRESA"
+            data_criacao = _field("data_criacao_laudo") or datetime.now().strftime("%d/%m/%Y")
+            mes_extenso = _field("mes_extenso")
+
+            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_empresa = _normalize_filename(empresa)
+            output_path = OUTPUT_DIR / f"pgr_aet_psicossocial_{safe_empresa}_{stamp}.docx"
+
+            _build_combined_pgr_aet_psychosocial(
+                pgr_docx,
+                aet_docx,
+                psicossocial_pdf,
+                output_path,
+                empresa,
+                data_criacao,
+                mes_extenso,
+            )
+            return _send_docx_with_cleanup(output_path, f"PGR_AET_RELATORIO_PSICOSSOCIAL_{safe_empresa}.docx")
+    except Exception as exc:
+        message = f"Erro ao juntar arquivos: {exc}"
+        if _is_ajax_request():
+            return _ajax_error(message)
+        flash(message, "error")
+        return redirect(url_for("juntar_arquivos"))
+
+
 @app.route("/juntar-arquivos")
 def juntar_arquivos():
     return render_template("juntar.html", companies=_sorted_companies(), today=datetime.now().strftime("%d/%m/%Y"))

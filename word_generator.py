@@ -11,6 +11,7 @@ from docx.table import Table
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import RGBColor, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1556,6 +1557,56 @@ def _ltcat_insert_page_break_before(anchor_table) -> None:
     anchor_table._tbl.addprevious(p)
 
 
+def _ltcat_remove_inventory_heading_paragraphs(doc: Document) -> None:
+    """Remove títulos soltos de INVENTÁRIO DE RISCOS do modelo LTCAT.
+
+    O título precisa ficar apenas imediatamente antes dos blocos de riscos
+    gerados. Como o modelo pode ter esse texto em uma posição fixa antiga,
+    removemos as ocorrências exatas e reinserimos no ponto correto.
+    """
+    for paragraph in list(doc.paragraphs):
+        if paragraph.text.strip().upper() == "INVENTÁRIO DE RISCOS":
+            paragraph._p.getparent().remove(paragraph._p)
+
+
+def _ltcat_insert_inventory_heading_before(anchor_table) -> None:
+    p = OxmlElement("w:p")
+    p_pr = OxmlElement("w:pPr")
+
+    keep_next = OxmlElement("w:keepNext")
+    p_pr.append(keep_next)
+
+    spacing = OxmlElement("w:spacing")
+    spacing.set(qn("w:before"), "0")
+    spacing.set(qn("w:after"), "120")
+    p_pr.append(spacing)
+
+    jc = OxmlElement("w:jc")
+    jc.set(qn("w:val"), "center")
+    p_pr.append(jc)
+
+    p.append(p_pr)
+
+    r = OxmlElement("w:r")
+    r_pr = OxmlElement("w:rPr")
+    r_fonts = OxmlElement("w:rFonts")
+    r_fonts.set(qn("w:ascii"), "Arial Narrow")
+    r_fonts.set(qn("w:hAnsi"), "Arial Narrow")
+    r_pr.append(r_fonts)
+    bold = OxmlElement("w:b")
+    r_pr.append(bold)
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), "24")
+    r_pr.append(sz)
+    r.append(r_pr)
+
+    t = OxmlElement("w:t")
+    t.text = "INVENTÁRIO DE RISCOS"
+    r.append(t)
+    p.append(r)
+    anchor_table._tbl.addprevious(p)
+
+
 def _ltcat_sector_cargos_text(sector: Mapping[str, Any]) -> str:
     return _sector_cargos_text(sector).upper()
 
@@ -1751,6 +1802,9 @@ def _ltcat_fill_riscos_area(doc: Document, groups: list[Mapping[str, Any]], data
     risk_anchor = risk_tables[0]
     absence_template = deepcopy(absence_anchor._tbl)
     risk_template = deepcopy(risk_anchor._tbl)
+
+    _ltcat_remove_inventory_heading_paragraphs(doc)
+    _ltcat_insert_inventory_heading_before(absence_anchor)
 
     for index, group in enumerate(groups):
         sector = group["sector"]
