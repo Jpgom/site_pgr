@@ -178,3 +178,9 @@ MAX_FORM_PARTS=500000
 - Quando o .xls só aponta para a pasta `_arquivos/sheet001.htm`, o sistema exibe orientação clara em vez de falhar silenciosamente.
 - A aba Recibos eSocial agora aceita `.zip` contendo o `.xls` e a pasta `_arquivos`, além de `.xls` completo e `.xlsx`.
 - Adiciona suporte a `.xls` binário via `xlrd`.
+
+## V47 - Correção do Inventário de Riscos
+
+- Corrigida a última parte da tabela do Inventário de Riscos no PGR.
+- As linhas fixas "CONTROLES EXISTENTES NO GES E SUA EFICÁCIA" e "Monitoramento da saúde do trabalhador através de exames ocupacionais." não são duplicadas.
+- A frase "NENHUM FATOR DE RISCO PSICOSSOCIAL FOI IDENTIFICADO PARA A SETOR" aparece apenas quando não houver risco psicossocial e fica como última linha da tabela.

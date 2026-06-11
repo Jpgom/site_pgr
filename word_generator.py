@@ -597,11 +597,19 @@ def _fill_pgr_sector_table(table_xml, sector: Mapping[str, Any], risks: list[Map
     # Monitoramento da saúde do trabalhador através de exames ocupacionais.
     # A frase de ausência psicossocial só entra quando não houver risco psicossocial
     # e deve ser a última linha da tabela, abaixo do monitoramento.
-    phrase_template = deepcopy(footer_first_row)
+    #
+    # Importante: alguns modelos antigos deixam a frase antes das linhas de controle,
+    # enquanto o PGR completo novo deixa a frase após o monitoramento. Portanto, nunca
+    # usamos índice fixo para esta linha; buscamos a linha pelo próprio texto, removemos
+    # todas as ocorrências e só depois recolocamos uma única vez no final quando necessário.
+    phrase_template = None
     for row in list(table_xml.findall(qn("w:tr"))):
         if "NENHUM FATOR DE RISCO PSICOSSOCIAL" in _xml_text(row).upper():
+            if phrase_template is None:
+                phrase_template = deepcopy(row)
             table_xml.remove(row)
-    if not has_psychosocial:
+
+    if not has_psychosocial and phrase_template is not None:
         table_xml.append(phrase_template)
 
 
