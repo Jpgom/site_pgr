@@ -277,7 +277,10 @@
           <strong>Pré-preenchimento técnico por CNAE</strong>
           <p class="muted small-note">O sistema usa o CNAE/atividade da empresa para sugerir opções do formulário. Tudo pode ser alterado antes de gerar.</p>
         </div>
-        <button class="btn small ghost" type="button" id="applyAetPresetBtn">Aplicar sugestões do CNAE</button>
+        <div class="inline-actions">
+          <button class="btn small ghost" type="button" id="applyAetPresetBtn">Aplicar sugestões do CNAE</button>
+          <a class="btn small ghost" href="{{ url_for('modelos_aet') }}" target="_blank">Ver modelos AET/CNAEs</a>
+        </div>
         <span class="pill soft-pill" id="aetPresetStatus">Aguardando empresa</span>
       </div>
       <div class="inline-grid">

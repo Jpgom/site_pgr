@@ -148,3 +148,10 @@ MAX_FORM_PARTS=500000
 - Ao aplicar modelo importado em uma empresa, o formulário é compactado no navegador e envia apenas empresa/modelo/grupo.
 - A sugestão de exames também envia somente setores e riscos selecionados.
 
+
+## V42 - CNAEs e modelos padrão de AET
+
+- Adicionada a tela **Modelos AET/CNAEs** com catálogo de CNAEs de referência e modelos técnicos de AET por atividade.
+- A etapa AET da tela **Gerar laudos** agora possui link para consultar os modelos disponíveis.
+- O botão **Aplicar sugestões do CNAE** usa CNAE principal, CNAE secundário, descrição da atividade e nome da empresa para pré-preencher o formulário de AET.
+- Foram adicionados modelos para comércio/vestuário, mercados, administrativo, limpeza, condomínios/portaria, restaurantes, clínicas, oficinas, construção civil, logística/transporte, escolas, estética, postos e atividades rurais.

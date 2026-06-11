@@ -1030,3 +1030,19 @@ if (suggestExamsBtn && pgrForm) {
     }
   }, true);
 })();
+
+// V42 - busca simples em catálogos/telas compactas.
+(function initGenericCardFilter(){
+  document.querySelectorAll('[data-filter-target]').forEach((input) => {
+    const selector = input.getAttribute('data-filter-target');
+    if (!selector) return;
+    const norm = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    input.addEventListener('input', () => {
+      const query = norm(input.value);
+      document.querySelectorAll(selector).forEach((item) => {
+        const text = norm(item.getAttribute('data-search') || item.textContent || '');
+        item.style.display = !query || text.includes(query) ? '' : 'none';
+      });
+    });
+  });
+})();

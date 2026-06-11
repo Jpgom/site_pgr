@@ -414,112 +414,180 @@ FORM_OPTIONS = {
 TIPOS_RISCO_LTCAT = {"FÍSICO", "QUÍMICO", "BIOLÓGICO"}
 
 # Presets técnicos de AET por CNAE/atividade.
-# Usados apenas para pré-marcar o formulário; o usuário pode alterar tudo antes de gerar.
+# Usados para pré-marcar o formulário da AET conforme CNAE/atividade da empresa.
+# Tudo continua editável antes da geração.
 AET_CNAE_PRESETS = [
     {
-        "keywords": ["47.81", "vestuário", "vestuario", "comércio varejista", "loja", "vendas"],
+        "keywords": ["47.81", "4781", "vestuário", "vestuario", "comércio varejista", "comercio varejista", "loja", "vendas", "artigos do vestuário", "acessórios"],
         "label": "Comércio varejista / vestuário",
-        "general": {
-            "tipo_documento": "AET completa com formulário ergonômico",
-            "motivo_analise": "Atendimento à NR-17 e integração com o PGR",
-            "condicao_ergonomica_geral": "Adequada com recomendações",
-        },
-        "sector": {
-            "postura": ["Em pé", "Deslocamento frequente", "Alternado"],
-            "tipo_atividade": "Atendimento, organização de mercadorias e apoio operacional",
-            "exigencia_fisica": "Moderada",
-            "exigencia_cognitiva": "Moderada",
-            "ritmo_trabalho": "Por demanda e fluxo de clientes",
-            "pausas": "Intervalos legais e pausas breves conforme organização da loja",
-            "mobiliario": "Parcialmente adequado",
-            "ambiente": "A avaliar conforto térmico, iluminação e circulação",
-            "organizacao": "Atendimento ao público, organização de prioridades e comunicação com liderança",
-            "equipamentos": "Balcão, prateleiras, araras, computador/sistema e materiais de apoio",
-            "fatores": ["Atendimento ao público", "Deslocamentos no setor", "Postura em pé", "Organização de demandas"],
-            "medidas": ["Alternância postural", "Pausas breves", "Organização do posto", "Orientação NR-17"],
-            "prioridade": "Média",
-            "prazo": "30 dias",
-            "responsavel": "Empresa / Administração",
-        },
+        "categoria": "Comércio e atendimento",
+        "cnaes_referencia": ["47.81-4-00", "47.82-2-01", "47.82-2-02"],
+        "setores_sugeridos": ["VENDAS", "ATENDIMENTO", "CAIXA", "ESTOQUE/DEPÓSITO", "SUPERVISÃO"],
+        "riscos_sugeridos": ["Postura em pé por longos períodos", "Frequente deslocamento a pé", "Trabalho em posturas incômodas", "Baixa autonomia", "Atendimento ao público"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Anamnese ocupacional"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e integração com o PGR", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Alternado"], "tipo_atividade": "Atendimento, organização de mercadorias e apoio operacional", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por demanda e fluxo de clientes", "pausas": "Intervalos legais e pausas breves conforme organização da loja", "mobiliario": "Parcialmente adequado", "ambiente": "A avaliar conforto térmico, iluminação e circulação", "organizacao": "Atendimento ao público, organização de prioridades e comunicação com liderança", "equipamentos": "Balcão, prateleiras, araras, computador/sistema e materiais de apoio", "fatores": ["Atendimento ao público", "Deslocamentos no setor", "Postura em pé", "Organização de demandas"], "medidas": ["Alternância postural", "Pausas breves", "Organização do posto", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
     },
     {
-        "keywords": ["81.21", "81.22", "81.29", "limpeza", "serviços combinados", "servicos combinados", "serviços gerais", "servicos gerais"],
-        "label": "Limpeza / serviços gerais",
-        "general": {
-            "tipo_documento": "AET completa com formulário ergonômico",
-            "motivo_analise": "Atendimento à NR-17 e avaliação das exigências físicas das atividades",
-            "condicao_ergonomica_geral": "Adequada com recomendações",
-        },
-        "sector": {
-            "postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"],
-            "tipo_atividade": "Limpeza, conservação, deslocamento e manuseio de materiais",
-            "exigencia_fisica": "Moderada",
-            "exigencia_cognitiva": "Baixa",
-            "ritmo_trabalho": "Por rotina e demandas do ambiente",
-            "pausas": "Pausas e alternância conforme intensidade da atividade",
-            "mobiliario": "Não aplicável diretamente; avaliar equipamentos e ferramentas manuais",
-            "ambiente": "A avaliar piso, circulação, ventilação e disponibilidade de local para descanso",
-            "organizacao": "Rotina operacional com definição clara de prioridades",
-            "equipamentos": "Vassouras, rodos, baldes, panos, produtos saneantes e carrinhos quando disponíveis",
-            "fatores": ["Esforço físico", "Posturas incômodas", "Deslocamentos frequentes", "Manuseio de materiais"],
-            "medidas": ["Alternância de tarefas", "Pausas", "Ferramentas adequadas", "Orientação NR-17"],
-            "prioridade": "Média",
-            "prazo": "30 dias",
-            "responsavel": "Empresa / Administração",
-        },
+        "keywords": ["47.11", "4711", "mercado", "supermercado", "minimercado", "mercearia", "atacado", "varejista de mercadorias"],
+        "label": "Mercado / supermercado / atacarejo",
+        "categoria": "Comércio e atendimento",
+        "cnaes_referencia": ["47.11-3-01", "47.11-3-02", "47.12-1-00"],
+        "setores_sugeridos": ["CAIXA", "REPOSIÇÃO", "AÇOUGUE", "PADARIA", "HORTIFRUTI", "DEPÓSITO", "ADMINISTRATIVO"],
+        "riscos_sugeridos": ["Postura em pé por longos períodos", "Levantamento e transporte manual de cargas", "Movimentos repetitivos", "Ritmo intenso de trabalho", "Atendimento ao público"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria quando houver ruído", "Espirometria quando houver poeiras/fumos"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação das exigências físicas e organizacionais", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Alternado"], "tipo_atividade": "Atendimento, reposição, organização de mercadorias e operação de caixa", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por demanda de clientes, recebimento e reposição de produtos", "pausas": "Intervalos legais e pausas breves conforme escala operacional", "mobiliario": "A avaliar bancadas, caixas, assentos e alturas de apoio", "ambiente": "A avaliar circulação, ruído, temperatura, iluminação e organização de cargas", "organizacao": "Fluxo operacional variável, atendimento ao público e necessidade de definição de prioridades", "equipamentos": "Checkouts, carrinhos, gôndolas, pallets, computadores e equipamentos de apoio", "fatores": ["Atendimento ao público", "Postura em pé", "Manuseio de materiais", "Deslocamentos no setor"], "medidas": ["Alternância postural", "Pausas breves", "Rodízio de tarefas", "Ferramentas adequadas", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
     },
     {
-        "keywords": ["administrativo", "escritório", "escritorio", "82.", "69.", "70."],
+        "keywords": ["82.19", "8219", "administrativo", "escritório", "escritorio", "preparação de documentos", "apoio administrativo", "serviços administrativos", "69.", "70."],
         "label": "Administrativo / escritório",
-        "general": {
-            "tipo_documento": "AET documental com análise por setor",
-            "motivo_analise": "Atendimento à NR-17 e análise do posto administrativo",
-            "condicao_ergonomica_geral": "Adequada com recomendações",
-        },
-        "sector": {
-            "postura": ["Sentado", "Alternado"],
-            "tipo_atividade": "Atividades administrativas, digitação, atendimento e organização documental",
-            "exigencia_fisica": "Baixa",
-            "exigencia_cognitiva": "Moderada",
-            "ritmo_trabalho": "Por demanda administrativa",
-            "pausas": "Pausas breves e alternância postural recomendadas",
-            "mobiliario": "A avaliar cadeira, mesa, monitor e acessórios",
-            "ambiente": "A avaliar iluminação, reflexos, ventilação e conforto acústico",
-            "organizacao": "Rotina administrativa com atenção a prazos, prioridades e comunicação",
-            "equipamentos": "Computador, monitor, teclado, mouse, telefone e documentos",
-            "fatores": ["Trabalho sentado", "Digitação", "Atenção contínua", "Organização de prioridades"],
-            "medidas": ["Ajuste de mobiliário", "Alternância postural", "Pausas visuais", "Orientação NR-17"],
-            "prioridade": "Baixa",
-            "prazo": "60 dias",
-            "responsavel": "Empresa / Administração",
-        },
+        "categoria": "Administrativo",
+        "cnaes_referencia": ["82.19-9-99", "82.11-3-00", "69.20-6-01", "70.20-4-00"],
+        "setores_sugeridos": ["ADMINISTRATIVO", "RECEPÇÃO", "FINANCEIRO", "RH", "SUPORTE"],
+        "riscos_sugeridos": ["Postura sentado por longos períodos", "Presença de reflexos em telas", "Movimentos repetitivos", "Baixa autonomia", "Sobrecarga de trabalho"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Anamnese ocupacional", "Anamnese psicossocial quando aplicável"],
+        "general": {"tipo_documento": "AET documental com análise por setor", "motivo_analise": "Atendimento à NR-17 e análise do posto administrativo", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Sentado", "Alternado"], "tipo_atividade": "Atividades administrativas, digitação, atendimento e organização documental", "exigencia_fisica": "Baixa", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por demanda administrativa", "pausas": "Pausas breves e alternância postural recomendadas", "mobiliario": "A avaliar cadeira, mesa, monitor e acessórios", "ambiente": "A avaliar iluminação, reflexos, ventilação e conforto acústico", "organizacao": "Rotina administrativa com atenção a prazos, prioridades e comunicação", "equipamentos": "Computador, monitor, teclado, mouse, telefone e documentos", "fatores": ["Trabalho sentado", "Digitação", "Atenção contínua", "Organização de prioridades"], "medidas": ["Ajuste de mobiliário", "Alternância postural", "Pausas visuais", "Orientação NR-17"], "prioridade": "Baixa", "prazo": "60 dias", "responsavel": "Empresa / Administração"},
     },
     {
-        "keywords": ["portaria", "porteiro", "vigilância", "vigilancia", "condomínio", "condominio", "81.12"],
-        "label": "Portaria / condomínio",
-        "general": {
-            "tipo_documento": "AET completa com formulário ergonômico",
-            "motivo_analise": "Atendimento à NR-17 e análise de atividade com atenção contínua",
-            "condicao_ergonomica_geral": "Adequada com recomendações",
-        },
-        "sector": {
-            "postura": ["Sentado", "Em pé", "Alternado"],
-            "tipo_atividade": "Controle de acesso, atendimento, monitoramento e comunicação",
-            "exigencia_fisica": "Baixa",
-            "exigencia_cognitiva": "Elevada",
-            "ritmo_trabalho": "Contínuo, com atenção permanente e demandas variáveis",
-            "pausas": "Pausas conforme escala, mantendo cobertura operacional",
-            "mobiliario": "A avaliar cadeira, bancada, campo visual e acesso aos controles",
-            "ambiente": "A avaliar ventilação, iluminação, conforto térmico e ruído",
-            "organizacao": "Atenção constante, comunicação e controle de prioridades",
-            "equipamentos": "Portão, interfone, rádio/telefone, computador, câmeras e controles",
-            "fatores": ["Atenção contínua", "Atendimento ao público", "Comunicação", "Postura alternada"],
-            "medidas": ["Ajuste do posto", "Pausas", "Definição de procedimentos", "Orientação NR-17"],
-            "prioridade": "Média",
-            "prazo": "30 dias",
-            "responsavel": "Empresa / Administração",
-        },
+        "keywords": ["81.21", "81.22", "81.29", "limpeza", "serviços gerais", "servicos gerais", "conservação", "conservacao", "serviços combinados"],
+        "label": "Limpeza / serviços gerais",
+        "categoria": "Serviços operacionais",
+        "cnaes_referencia": ["81.21-4-00", "81.22-2-00", "81.29-0-00"],
+        "setores_sugeridos": ["SERVIÇOS GERAIS", "LIMPEZA", "APOIO", "ÁREAS COMUNS"],
+        "riscos_sugeridos": ["Posturas incômodas", "Esforço físico", "Frequente deslocamento a pé", "Levantamento e transporte manual de cargas", "Produtos saneantes"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Hemograma quando houver exposição química", "Espirometria quando houver aerodispersoides"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação das exigências físicas das atividades", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"], "tipo_atividade": "Limpeza, conservação, deslocamento e manuseio de materiais", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Baixa", "ritmo_trabalho": "Por rotina e demandas do ambiente", "pausas": "Pausas e alternância conforme intensidade da atividade", "mobiliario": "Não aplicável diretamente; avaliar equipamentos e ferramentas manuais", "ambiente": "A avaliar piso, circulação, ventilação e disponibilidade de local para descanso", "organizacao": "Rotina operacional com definição clara de prioridades", "equipamentos": "Vassouras, rodos, baldes, panos, produtos saneantes e carrinhos quando disponíveis", "fatores": ["Esforço físico", "Posturas incômodas", "Deslocamentos frequentes", "Manuseio de materiais"], "medidas": ["Alternância de tarefas", "Pausas breves", "Ferramentas adequadas", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
     },
+    {
+        "keywords": ["81.12", "8112", "condomínio", "condominio", "portaria", "porteiro", "zelador", "vigilância", "vigilancia"],
+        "label": "Condomínio / portaria",
+        "categoria": "Serviços prediais",
+        "cnaes_referencia": ["81.12-5-00", "80.11-1-01"],
+        "setores_sugeridos": ["PORTARIA", "ADMINISTRAÇÃO", "LIMPEZA", "MANUTENÇÃO"],
+        "riscos_sugeridos": ["Postura sentado e/ou em pé", "Atenção contínua", "Atendimento ao público", "Comunicação hostil", "Deslocamento frequente"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Anamnese psicossocial quando aplicável"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e análise de atividade com atenção contínua", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Sentado", "Em pé", "Alternado"], "tipo_atividade": "Controle de acesso, atendimento, monitoramento e comunicação", "exigencia_fisica": "Baixa", "exigencia_cognitiva": "Elevada", "ritmo_trabalho": "Contínuo, com atenção permanente e demandas variáveis", "pausas": "Pausas conforme escala, mantendo cobertura operacional", "mobiliario": "A avaliar cadeira, bancada, campo visual e acesso aos controles", "ambiente": "A avaliar ventilação, iluminação, conforto térmico e ruído", "organizacao": "Atenção constante, comunicação e controle de prioridades", "equipamentos": "Portão, interfone, rádio/telefone, computador, câmeras e controles", "fatores": ["Atenção contínua", "Atendimento ao público", "Comunicação", "Postura alternada"], "medidas": ["Ajuste do posto", "Pausas breves", "Definição de procedimentos", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["56.11", "5611", "restaurante", "lanchonete", "bar", "alimentação", "alimentacao", "cozinha", "refeição", "refeicao"],
+        "label": "Restaurante / lanchonete / cozinha",
+        "categoria": "Alimentação",
+        "cnaes_referencia": ["56.11-2-01", "56.11-2-03", "56.20-1-04"],
+        "setores_sugeridos": ["COZINHA", "ATENDIMENTO", "CAIXA", "ESTOQUE", "SALÃO"],
+        "riscos_sugeridos": ["Postura em pé por longos períodos", "Trabalho em posturas incômodas", "Movimentos repetitivos", "Calor", "Levantamento e transporte de cargas"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Hemograma quando aplicável"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação de atividades de cozinha e atendimento", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco"], "tipo_atividade": "Preparo de alimentos, atendimento, organização e limpeza de utensílios/ambientes", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por demanda de preparo e atendimento", "pausas": "Pausas conforme escala e alternância de atividades", "mobiliario": "A avaliar bancadas, alturas de apoio e circulação", "ambiente": "A avaliar calor, ventilação, piso, iluminação e organização do fluxo", "organizacao": "Demandas variáveis, atenção ao preparo e atendimento ao público", "equipamentos": "Fogão, balcões, utensílios, refrigeradores, caixas e equipamentos de apoio", "fatores": ["Postura em pé", "Deslocamentos no setor", "Manuseio de materiais", "Atenção contínua"], "medidas": ["Alternância postural", "Pausas breves", "Organização do posto", "Ferramentas adequadas", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["86.30", "8630", "86.40", "8640", "clínica", "clinica", "consultório", "consultorio", "atividade médica", "exames complementares", "laboratório", "laboratorio"],
+        "label": "Clínica / consultório / laboratório",
+        "categoria": "Saúde",
+        "cnaes_referencia": ["86.30-5-02", "86.40-2-02", "86.40-2-08"],
+        "setores_sugeridos": ["RECEPÇÃO", "ATENDIMENTO", "COLETA/EXAMES", "ADMINISTRATIVO", "LIMPEZA"],
+        "riscos_sugeridos": ["Postura sentada", "Atenção contínua", "Atendimento ao público", "Movimentos repetitivos", "Comunicação com pacientes"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Hemograma quando houver exposição biológica", "Cartão de vacina quando aplicável"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e análise de atividades administrativas/assistenciais", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Sentado", "Em pé", "Alternado"], "tipo_atividade": "Atendimento, registro, apoio assistencial e organização documental", "exigencia_fisica": "Baixa", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por agendamento, demanda de pacientes e rotinas internas", "pausas": "Pausas breves e alternância postural recomendadas", "mobiliario": "A avaliar cadeiras, bancadas, macas, computadores e campo visual", "ambiente": "A avaliar iluminação, circulação, ruído, ventilação e privacidade", "organizacao": "Atendimento ao público, atenção contínua e comunicação com equipe/pacientes", "equipamentos": "Computadores, impressoras, equipamentos de exames, telefone e materiais de apoio", "fatores": ["Atendimento ao público", "Atenção contínua", "Trabalho sentado", "Comunicação"], "medidas": ["Ajuste de mobiliário", "Alternância postural", "Pausas visuais", "Melhoria de comunicação", "Orientação NR-17"], "prioridade": "Baixa", "prazo": "60 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["45.20", "4520", "oficina", "mecânica", "mecanica", "manutenção de veículos", "manutencao de veiculos", "autopeças", "autopecas"],
+        "label": "Oficina mecânica / manutenção automotiva",
+        "categoria": "Manutenção",
+        "cnaes_referencia": ["45.20-0-01", "45.20-0-02", "45.30-7-03"],
+        "setores_sugeridos": ["OFICINA", "MANUTENÇÃO", "ADMINISTRATIVO", "ESTOQUE"],
+        "riscos_sugeridos": ["Posturas incômodas", "Esforço físico", "Levantamento de cargas", "Movimentos repetitivos", "Uso de ferramentas manuais"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria quando houver ruído", "Hemograma/TGO/TGP quando houver químicos"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação de atividades de manutenção", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Inclinação/flexão de tronco", "Agachamento eventual", "Deslocamento frequente"], "tipo_atividade": "Manutenção, inspeção, uso de ferramentas e organização de peças/equipamentos", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por ordens de serviço e demandas de manutenção", "pausas": "Pausas conforme intensidade e alternância de tarefas", "mobiliario": "Não aplicável diretamente; avaliar bancadas, alturas e ferramentas", "ambiente": "A avaliar circulação, ruído, iluminação, ventilação e organização de ferramentas", "organizacao": "Demandas variáveis, necessidade de procedimentos e comunicação de segurança", "equipamentos": "Ferramentas manuais, bancadas, elevadores, compressores e equipamentos de apoio", "fatores": ["Posturas incômodas", "Manuseio de materiais", "Atenção contínua", "Deslocamentos no setor"], "medidas": ["Ferramentas adequadas", "Alternância de tarefas", "Pausas breves", "Organização do posto", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["43.", "41.", "42.", "construção", "construcao", "obra", "engenharia", "serviços de construção", "edificação", "edificacao"],
+        "label": "Construção civil / obras",
+        "categoria": "Construção",
+        "cnaes_referencia": ["41.20-4-00", "43.99-1-99", "42.99-5-99"],
+        "setores_sugeridos": ["OBRA", "OPERACIONAL", "ALMOXARIFADO", "ADMINISTRATIVO", "ENGENHARIA"],
+        "riscos_sugeridos": ["Esforço físico", "Levantamento e transporte manual de cargas", "Posturas incômodas", "Trabalho em altura", "Ritmo de trabalho"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria", "Espirometria quando houver poeiras", "ECG quando aplicável"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e análise das exigências físicas de atividades operacionais", "condicao_ergonomica_geral": "Parcialmente adequada"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"], "tipo_atividade": "Execução, apoio e acompanhamento de atividades operacionais de obra", "exigencia_fisica": "Elevada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por etapas da obra, cronograma e demandas operacionais", "pausas": "Pausas conforme intensidade física, calor e organização da frente de serviço", "mobiliario": "Não aplicável diretamente; avaliar ferramentas, bancadas e áreas de apoio", "ambiente": "A avaliar calor, ruído, poeira, circulação, iluminação e áreas de descanso", "organizacao": "Atividades com prazos, frentes de serviço e necessidade de comunicação contínua", "equipamentos": "Ferramentas manuais, escadas, andaimes, máquinas e materiais de construção", "fatores": ["Esforço físico", "Posturas incômodas", "Manuseio de materiais", "Deslocamentos no setor"], "medidas": ["Rodízio de tarefas", "Pausas breves", "Ferramentas adequadas", "Organização do posto", "Orientação NR-17"], "prioridade": "Alta", "prazo": "30 dias", "responsavel": "Empresa / Engenharia / Segurança do Trabalho"},
+    },
+    {
+        "keywords": ["49.", "52.", "transporte", "logística", "logistica", "armazenagem", "depósito", "deposito", "entrega", "motorista", "carga"],
+        "label": "Transporte / logística / depósito",
+        "categoria": "Logística",
+        "cnaes_referencia": ["49.30-2-02", "52.11-7-99", "52.50-8-04"],
+        "setores_sugeridos": ["OPERACIONAL", "DEPÓSITO", "EXPEDIÇÃO", "GARAGEM", "ADMINISTRATIVO"],
+        "riscos_sugeridos": ["Levantamento e transporte manual de cargas", "Postura sentada por longos períodos", "Vibração de corpo inteiro", "Deslocamento frequente", "Ritmo de entregas"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria quando houver ruído", "Avaliação osteomuscular quando aplicável"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação das exigências de transporte, armazenamento e movimentação", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Sentado", "Em pé", "Deslocamento frequente", "Alternado"], "tipo_atividade": "Transporte, movimentação, conferência, organização e expedição de materiais", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por rotas, demanda de carga/descarga e prazos operacionais", "pausas": "Pausas conforme escala, trajetos e intensidade da movimentação", "mobiliario": "A avaliar assentos, cabines, bancadas e áreas de apoio", "ambiente": "A avaliar circulação, piso, iluminação, ruído, temperatura e organização de cargas", "organizacao": "Demandas variáveis, prazos, rotas e comunicação operacional", "equipamentos": "Veículos, carrinhos, paleteiras, prateleiras, caixas e sistemas de controle", "fatores": ["Manuseio de materiais", "Deslocamentos no setor", "Trabalho sentado", "Atenção contínua"], "medidas": ["Alternância postural", "Pausas breves", "Ferramentas adequadas", "Organização do posto", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["85.", "educação", "educacao", "escola", "curso", "ensino", "professor", "creche"],
+        "label": "Escola / educação",
+        "categoria": "Educação",
+        "cnaes_referencia": ["85.13-9-00", "85.20-1-00", "85.99-6-99"],
+        "setores_sugeridos": ["SALA DE AULA", "ADMINISTRATIVO", "COORDENAÇÃO", "LIMPEZA", "APOIO"],
+        "riscos_sugeridos": ["Postura em pé", "Uso contínuo da voz", "Atenção contínua", "Sobrecarga de trabalho", "Atendimento ao público"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Avaliação vocal quando aplicável", "Anamnese psicossocial quando aplicável"],
+        "general": {"tipo_documento": "AET documental com análise por setor", "motivo_analise": "Atendimento à NR-17 e avaliação de atividades pedagógicas/administrativas", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Sentado", "Alternado"], "tipo_atividade": "Atividades pedagógicas, atendimento, orientação, registros e acompanhamento de alunos", "exigencia_fisica": "Baixa", "exigencia_cognitiva": "Elevada", "ritmo_trabalho": "Por calendário, horários de aula e demandas de atendimento", "pausas": "Pausas conforme jornada, intervalos e organização pedagógica", "mobiliario": "A avaliar cadeiras, mesas, quadro, computador e campo visual", "ambiente": "A avaliar iluminação, ruído, ventilação, conforto térmico e circulação", "organizacao": "Atenção contínua, comunicação, demandas pedagógicas e relacionamento interpessoal", "equipamentos": "Quadro, computador, mesas, cadeiras, materiais didáticos e telefone", "fatores": ["Atenção contínua", "Comunicação", "Postura alternada", "Atendimento ao público"], "medidas": ["Pausas breves", "Organização do posto", "Melhoria de comunicação", "Definição de prioridades", "Orientação NR-17"], "prioridade": "Média", "prazo": "60 dias", "responsavel": "Empresa / Coordenação"},
+    },
+    {
+        "keywords": ["96.02", "9602", "salão", "salao", "beleza", "barbearia", "cabeleireiro", "estética", "estetica", "manicure"],
+        "label": "Salão de beleza / estética",
+        "categoria": "Serviços pessoais",
+        "cnaes_referencia": ["96.02-5-01", "96.02-5-02"],
+        "setores_sugeridos": ["ATENDIMENTO", "PROCEDIMENTOS", "RECEPÇÃO", "LIMPEZA"],
+        "riscos_sugeridos": ["Postura em pé", "Movimentos repetitivos", "Posturas incômodas", "Atenção visual", "Atendimento ao público"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Hemograma/TGO/TGP quando houver químicos"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e análise de atividades com movimentos repetitivos e atendimento", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Sentado", "Inclinação/flexão de tronco"], "tipo_atividade": "Atendimento, procedimentos estéticos, organização do posto e uso de materiais", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por agenda e demanda de clientes", "pausas": "Pausas breves entre atendimentos e alternância postural recomendadas", "mobiliario": "A avaliar cadeiras, bancadas, espelhos e alturas de trabalho", "ambiente": "A avaliar iluminação, ventilação, odores, conforto térmico e circulação", "organizacao": "Atendimento ao público, agenda, comunicação e organização de procedimentos", "equipamentos": "Cadeiras, bancadas, instrumentos, secadores, produtos e materiais de apoio", "fatores": ["Atendimento ao público", "Posturas incômodas", "Movimentos repetitivos", "Atenção contínua"], "medidas": ["Ajuste de mobiliário", "Pausas breves", "Alternância postural", "Organização do posto", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["47.3", "473", "posto", "combustível", "combustivel", "gasolina", "lubrificante", "conveniência", "conveniencia"],
+        "label": "Posto de combustível / conveniência",
+        "categoria": "Comércio e combustíveis",
+        "cnaes_referencia": ["47.31-8-00", "47.32-6-00", "47.29-6-02"],
+        "setores_sugeridos": ["PISTA", "CAIXA", "CONVENIÊNCIA", "ADMINISTRATIVO"],
+        "riscos_sugeridos": ["Postura em pé", "Atendimento ao público", "Deslocamento frequente", "Exigência de atenção", "Comunicação com clientes"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Hemograma/TGO/TGP quando houver químicos"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação das atividades de atendimento e operação", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Alternado"], "tipo_atividade": "Atendimento, abastecimento, conferência, caixa e organização do ambiente", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por fluxo de clientes e demanda operacional", "pausas": "Pausas conforme escala, mantendo cobertura operacional", "mobiliario": "A avaliar balcões, caixas, assentos e áreas de apoio", "ambiente": "A avaliar circulação, conforto térmico, exposição externa e organização do posto", "organizacao": "Atendimento contínuo, comunicação e controle de demandas", "equipamentos": "Bombas, sistemas de caixa, balcões, prateleiras e equipamentos de apoio", "fatores": ["Atendimento ao público", "Postura em pé", "Deslocamentos no setor", "Atenção contínua"], "medidas": ["Alternância postural", "Pausas breves", "Organização do posto", "Melhoria de comunicação", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["01.", "agro", "agricultura", "pecuária", "pecuaria", "rural", "fazenda", "plantio", "criação de animais"],
+        "label": "Atividade rural / agropecuária",
+        "categoria": "Rural",
+        "cnaes_referencia": ["01.11-3-01", "01.51-2-01", "01.62-8-01"],
+        "setores_sugeridos": ["OPERACIONAL", "CAMPO", "MANUTENÇÃO", "ADMINISTRATIVO"],
+        "riscos_sugeridos": ["Esforço físico", "Posturas incômodas", "Levantamento de cargas", "Deslocamento frequente", "Exposição ao calor"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria quando houver máquinas", "Espirometria quando houver poeira"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e análise das exigências físicas de atividades rurais", "condicao_ergonomica_geral": "Parcialmente adequada"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"], "tipo_atividade": "Atividades operacionais rurais, manejo, apoio, manutenção e deslocamentos", "exigencia_fisica": "Elevada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por rotina operacional, sazonalidade e condições climáticas", "pausas": "Pausas conforme intensidade física, calor e organização da jornada", "mobiliario": "Não aplicável diretamente; avaliar ferramentas, veículos e áreas de apoio", "ambiente": "A avaliar calor, iluminação natural, terreno, poeira, ruído e áreas de descanso", "organizacao": "Demandas variáveis, deslocamentos e necessidade de comunicação operacional", "equipamentos": "Ferramentas manuais, máquinas, veículos, materiais e equipamentos de apoio", "fatores": ["Esforço físico", "Posturas incômodas", "Deslocamentos no setor", "Manuseio de materiais"], "medidas": ["Pausas breves", "Alternância de tarefas", "Ferramentas adequadas", "Organização do posto", "Orientação NR-17"], "prioridade": "Alta", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["33.", "manutenção", "manutencao", "refrigeração", "refrigeracao", "instalação", "instalacao", "máquinas", "maquinas", "equipamentos"],
+        "label": "Instalação / manutenção técnica / refrigeração",
+        "categoria": "Manutenção",
+        "cnaes_referencia": ["33.14-7-07", "43.22-3-02", "33.21-0-00"],
+        "setores_sugeridos": ["OPERACIONAL", "MANUTENÇÃO", "TÉCNICO", "ADMINISTRATIVO"],
+        "riscos_sugeridos": ["Posturas incômodas", "Esforço físico", "Trabalho em altura", "Atenção contínua", "Levantamento de cargas"],
+        "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria quando houver ruído", "ECG quando aplicável"],
+        "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação de atividades técnicas e de manutenção", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"], "tipo_atividade": "Instalação, manutenção, inspeção, uso de ferramentas e deslocamentos técnicos", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por ordens de serviço, chamados e demandas técnicas", "pausas": "Pausas conforme intensidade e alternância de tarefas", "mobiliario": "Não aplicável diretamente; avaliar ferramentas, bancadas e acesso aos equipamentos", "ambiente": "A avaliar circulação, ruído, iluminação, calor/frio e espaço de trabalho", "organizacao": "Demandas variáveis, deslocamento, prazos e necessidade de procedimentos", "equipamentos": "Ferramentas manuais, escadas, equipamentos técnicos, instrumentos e materiais", "fatores": ["Posturas incômodas", "Atenção contínua", "Manuseio de materiais", "Deslocamentos no setor"], "medidas": ["Ferramentas adequadas", "Rodízio de tarefas", "Pausas breves", "Organização do posto", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+]
+
+# Catálogo resumido de CNAEs usados na tela de consulta dos modelos de AET.
+AET_CNAE_CATALOG = [
+    {"cnae": cnae, "modelo": item["label"], "categoria": item.get("categoria", ""), "setores": item.get("setores_sugeridos", []), "riscos": item.get("riscos_sugeridos", []), "exames": item.get("exames_sugeridos", [])}
+    for item in AET_CNAE_PRESETS for cnae in item.get("cnaes_referencia", [])
 ]
 
 # Motor simples de regras técnicas para sugestão de exames por risco.
@@ -2881,6 +2949,19 @@ def _validate_complete_report_fields(company: dict[str, str], label: str) -> lis
     if company.get("ajuste_psicossocial") == "1" and not company.get("data_da_revisao"):
         errors.append("Preencha a Data da revisão psicossocial quando marcar que o laudo é apenas um ajuste.")
     return errors
+
+
+@app.route("/modelos-aet")
+def modelos_aet():
+    """Catálogo de CNAEs e modelos técnicos padrão para AET.
+
+    A tela serve como consulta para o usuário entender quais respostas padrão
+    serão sugeridas quando clicar em Aplicar sugestões do CNAE na geração.
+    """
+    categorias: dict[str, list[dict[str, Any]]] = {}
+    for item in AET_CNAE_PRESETS:
+        categorias.setdefault(item.get("categoria", "Outros"), []).append(item)
+    return render_template("modelos_aet.html", categorias=categorias, catalog=AET_CNAE_CATALOG)
 
 
 @app.route("/gerar")

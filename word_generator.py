@@ -144,6 +144,96 @@ def _set_cell_text(cell_xml, value: Any, font_color: str | None = "000000") -> N
     cell_xml.append(paragraph)
 
 
+
+def _set_cell_text_with_font(
+    cell_xml,
+    value: Any,
+    font_name: str = "Arial Narrow",
+    font_size_pt: int = 10,
+    font_color: str | None = "000000",
+    bold: bool = False,
+    align: str | None = None,
+    vertical_align: str | None = None,
+) -> None:
+    """Substitui o texto da célula e força fonte/tamanho/alinhamento no OOXML.
+
+    Usado especialmente na coluna GES do Plano de Ação, porque no PGR completo
+    a tabela é manipulada por XML puro e não passa pelo loop final do python-docx.
+    """
+    old_paragraphs = cell_xml.findall(qn("w:p"))
+    first_paragraph = old_paragraphs[0] if old_paragraphs else None
+    paragraph_properties = None
+    run_properties = None
+
+    if first_paragraph is not None:
+        p_pr = first_paragraph.find(qn("w:pPr"))
+        if p_pr is not None:
+            paragraph_properties = deepcopy(p_pr)
+        first_run = first_paragraph.find(qn("w:r"))
+        if first_run is not None:
+            r_pr = first_run.find(qn("w:rPr"))
+            if r_pr is not None:
+                run_properties = deepcopy(r_pr)
+
+    if paragraph_properties is None:
+        paragraph_properties = OxmlElement("w:pPr")
+    if align:
+        jc = paragraph_properties.find(qn("w:jc"))
+        if jc is None:
+            jc = OxmlElement("w:jc")
+            paragraph_properties.append(jc)
+        jc.set(qn("w:val"), align)
+
+    if run_properties is None:
+        run_properties = OxmlElement("w:rPr")
+
+    # Remove formatação antiga que possa vir do modelo para não ficar com
+    # duas marcações conflitantes de fonte/tamanho no Word.
+    for tag in ("w:rFonts", "w:sz", "w:szCs", "w:b", "w:bCs"):
+        for el in list(run_properties.findall(qn(tag))):
+            run_properties.remove(el)
+
+    r_fonts = OxmlElement("w:rFonts")
+    run_properties.append(r_fonts)
+    for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
+        r_fonts.set(qn(f"w:{attr}"), font_name)
+
+    size_val = str(int(font_size_pt * 2))
+    sz = OxmlElement("w:sz")
+    run_properties.append(sz)
+    sz.set(qn("w:val"), size_val)
+    sz_cs = OxmlElement("w:szCs")
+    run_properties.append(sz_cs)
+    sz_cs.set(qn("w:val"), size_val)
+
+    if bold:
+        run_properties.append(OxmlElement("w:b"))
+    _set_font_color(run_properties, font_color)
+
+    tc_pr = cell_xml.find(qn("w:tcPr"))
+    if vertical_align:
+        if tc_pr is None:
+            tc_pr = OxmlElement("w:tcPr")
+            cell_xml.insert(0, tc_pr)
+        v_align = tc_pr.find(qn("w:vAlign"))
+        if v_align is None:
+            v_align = OxmlElement("w:vAlign")
+            tc_pr.append(v_align)
+        v_align.set(qn("w:val"), vertical_align)
+
+    for child in list(cell_xml):
+        if child.tag != qn("w:tcPr"):
+            cell_xml.remove(child)
+
+    paragraph = OxmlElement("w:p")
+    paragraph.append(paragraph_properties)
+    run = OxmlElement("w:r")
+    run.append(run_properties)
+    for node in _make_text(value):
+        run.append(node)
+    paragraph.append(run)
+    cell_xml.append(paragraph)
+
 def _set_cell_shading(cell_xml, fill_hex: str | None) -> None:
     if not fill_hex:
         return
@@ -213,6 +303,61 @@ def _page_break_paragraph() -> OxmlElement:
     return paragraph
 
 
+
+def _set_row_cant_split(row_xml) -> None:
+    """Evita que uma linha de tabela seja quebrada entre páginas."""
+    tr_pr = row_xml.find(qn("w:trPr"))
+    if tr_pr is None:
+        tr_pr = OxmlElement("w:trPr")
+        row_xml.insert(0, tr_pr)
+    if tr_pr.find(qn("w:cantSplit")) is None:
+        tr_pr.append(OxmlElement("w:cantSplit"))
+
+
+def _set_row_min_height(row_xml, minimum_twips: int) -> None:
+    """Define altura mínima da linha, permitindo expansão se o conteúdo precisar."""
+    tr_pr = row_xml.find(qn("w:trPr"))
+    if tr_pr is None:
+        tr_pr = OxmlElement("w:trPr")
+        row_xml.insert(0, tr_pr)
+    height = tr_pr.find(qn("w:trHeight"))
+    if height is None:
+        height = OxmlElement("w:trHeight")
+        tr_pr.append(height)
+    old_val = height.get(qn("w:val"))
+    try:
+        old_int = int(old_val or 0)
+    except ValueError:
+        old_int = 0
+    height.set(qn("w:val"), str(max(old_int, minimum_twips)))
+    height.set(qn("w:hRule"), "atLeast")
+
+
+def _insert_page_break_before_previous_paragraph(element, text_marker: str) -> None:
+    """Insere quebra de página antes do parágrafo anterior que contenha o marcador."""
+    parent = element.getparent()
+    if parent is None:
+        return
+    children = list(parent)
+    try:
+        index = children.index(element)
+    except ValueError:
+        return
+    normalized_marker = text_marker.strip().upper()
+    for prev_index in range(index - 1, -1, -1):
+        candidate = children[prev_index]
+        if candidate.tag != qn("w:p"):
+            continue
+        text = "".join(node.text or "" for node in candidate.iter(qn("w:t"))).strip().upper()
+        if normalized_marker in text:
+            # Evita inserir duas vezes caso o modelo já tenha uma quebra logo antes.
+            if prev_index > 0 and children[prev_index - 1].tag == qn("w:p"):
+                has_break = children[prev_index - 1].find(f".//{qn('w:br')}") is not None
+                if has_break:
+                    return
+            parent.insert(prev_index, _page_break_paragraph())
+            return
+
 # ---------------------------------------------------------------------------
 # PLANO DE AÇÃO
 # ---------------------------------------------------------------------------
@@ -220,6 +365,9 @@ def _page_break_paragraph() -> OxmlElement:
 def _fill_plano_row(row_xml, risk: Mapping[str, Any], setor: str = "", data_atual: str = "", data_final: str = "") -> None:
     cells = row_xml.findall(qn("w:tc"))
     if len(cells) >= 7:
+        setor_lines = [line for line in str(setor or "").splitlines() if line.strip()]
+        _set_row_cant_split(row_xml)
+        _set_row_min_height(row_xml, max(1025, 420 + (max(1, len(setor_lines)) * 260)))
         # Novo modelo: GES recebe o setor.
         # Datas do plano de ação:
         # - regra geral: prazo de implantação = Data atual/início da vigência;
@@ -229,7 +377,7 @@ def _fill_plano_row(row_xml, risk: Mapping[str, Any], setor: str = "", data_atua
         prazo_implantacao = "30 DIAS" if is_psychosocial else (data_atual or "")
         prazo_reavaliacao = "180 DIAS" if is_psychosocial else (data_final or "")
 
-        _set_cell_text(cells[0], setor)
+        _set_cell_text_with_font(cells[0], setor, font_name="Arial Narrow", font_size_pt=10, font_color="000000", bold=False, align="center", vertical_align="center")
         _set_cell_text(cells[1], risk.get("risco", ""))
         _set_cell_text(cells[2], risk.get("acoes", ""))
         # cells[3] mantém o responsável fixo do modelo: ADMINISTRAÇÃO.
@@ -1080,6 +1228,9 @@ def generate_complete_pgr_docx(
     _replace_xml_element_with(relation_table.getparent(), relation_table, _build_relacao_elements(relation_table, sectors, data_atual, data_final))
     _replace_xml_element_with(descritivo_table.getparent(), descritivo_table, _build_descritivo_elements(descritivo_table, sectors))
     _replace_xml_element_with(risco_pgr_table.getparent(), risco_pgr_table, _build_risco_pgr_elements(risco_pgr_table, groups, break_before_first=False))
+    # O plano de ação fica em página própria para evitar que linhas com vários setores na coluna GES
+    # sejam quebradas entre páginas no final do inventário.
+    _insert_page_break_before_previous_paragraph(plano_table, "PLANO DE AÇÃO")
     _replace_xml_element_with(plano_table.getparent(), plano_table, _build_action_plan_elements(plano_table, groups, data_atual=data_atual, data_final=data_final))
 
     _fill_company_identification_tables(doc, company, sectors)
