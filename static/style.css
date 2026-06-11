@@ -289,3 +289,11 @@ body.modal-open{overflow:hidden}
   color: #6b7a90;
 }
 .exam-knowledge-box{display:grid;gap:4px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:14px;padding:12px;margin:10px 0 14px;color:#1e3a8a}.exam-knowledge-box strong{font-size:13px}.exam-knowledge-box span{font-size:12px;line-height:1.45;color:#334155}
+
+/* V39 - gerenciamento de modelos importados */
+.imported-models-manager .compact-list { gap: 10px; }
+.imported-template-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.imported-template-row form { margin:0; }
+.imported-template-row small { display:block; color: var(--muted); margin-top: 3px; }
+.btn.danger { color:#b91c1c; border-color:#fecaca; background:#fff5f5; }
+.btn.danger:hover { background:#fee2e2; }

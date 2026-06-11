@@ -21,11 +21,41 @@
   </form>
 </section>
 
+
+{% if imported_templates %}
+<section class="panel imported-models-manager">
+  <div class="split header-line">
+    <div>
+      <h2>Modelos importados salvos</h2>
+      <p class="muted">Esses modelos guardam setores, cargos, riscos, vínculos por setor e exames para aplicar em qualquer empresa nova.</p>
+    </div>
+    <form method="post" action="{{ url_for('delete_all_imported_templates') }}" onsubmit="return confirm('Apagar todos os modelos importados? Os riscos, setores e exames cadastrados manualmente serão preservados.');">
+      <button class="btn small danger" type="submit">Apagar todos os modelos importados</button>
+    </form>
+  </div>
+  <div class="compact-list">
+    {% for tpl in imported_templates %}
+      <div class="compact-row imported-template-row">
+        <div>
+          <strong>{{ tpl.nome }}</strong>
+          <small>{{ tpl.source_company }}{% if tpl.source_cnpj %} · {{ tpl.source_cnpj }}{% endif %}</small>
+          <small>{{ tpl.sector_count }} setor(es) · {{ tpl.risk_count }} risco(s) · {{ tpl.linked_risk_count }} vínculo(s) risco/setor · {{ tpl.exam_count }} exame(s)</small>
+        </div>
+        <form method="post" action="{{ url_for('delete_imported_template', template_id=tpl.id) }}" onsubmit="return confirm('Apagar este modelo importado? Os cadastros manuais serão preservados.');">
+          <button class="btn small danger" type="submit">Excluir modelo</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if extracted %}
 <section class="panel">
   <h2>2. Revisar e salvar no sistema</h2>
   <p class="muted">Os dados abaixo são sugestões. Edite antes de salvar para evitar cadastro errado.</p>
   <form method="post" action="{{ url_for('salvar_importacao_laudo_antigo') }}" class="grid-form">
+    <input type="hidden" name="draft_id" value="{{ draft_id }}">
     <label class="span-2">
       <span>Nome do modelo reutilizável</span>
       <input name="template_name" value="Modelo importado - {{ extracted.get('empresa','Laudo antigo') }}" placeholder="Ex.: Modelo Administrativo D. Castro">
@@ -104,9 +134,6 @@
         {% endfor %}
       </select>
     </label>
-    <input type="hidden" name="setores_json" value='{{ extracted.get("setores_json", "[]")|e }}'>
-    <input type="hidden" name="riscos_json" value='{{ extracted.get("riscos_json", "[]")|e }}'>
-    <input type="hidden" name="sector_risks_json" value='{{ extracted.get("sector_risks_json", "{}")|e }}'>
     <label class="span-2">
       <span>Setores encontrados</span>
       <textarea name="setores_extraidos" rows="7" placeholder="Um setor por linha">{{ extracted.get('setores', [])|join('\n') }}</textarea>

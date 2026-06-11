@@ -139,3 +139,12 @@ MAX_FORM_PARTS=500000
 - A importação inteligente agora salva um modelo reutilizável com setores, cargos, riscos e exames extraídos do laudo antigo.
 - O modelo não fica preso à empresa original: ele pode ser aplicado em qualquer empresa cadastrada na tela Gerar laudos.
 - Ao aplicar o modelo em uma empresa, o sistema cria/atualiza os setores, cargos, riscos e exames necessários e cria uma configuração de geração já marcada para revisão.
+
+## V39 - Importação por banco e modelos importados
+
+- A leitura de laudos antigos agora salva um rascunho no banco, evitando enviar JSON gigante em campos ocultos.
+- A revisão da importação envia apenas o ID do rascunho, reduzindo erro de formulário grande.
+- Modelos importados podem ser excluídos individualmente ou todos de uma vez.
+- Ao aplicar modelo importado em uma empresa, o formulário é compactado no navegador e envia apenas empresa/modelo/grupo.
+- A sugestão de exames também envia somente setores e riscos selecionados.
+

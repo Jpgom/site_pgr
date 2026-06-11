@@ -174,11 +174,43 @@ function restoreCompactedPayload(form) {
   delete form.dataset.payloadCompacted;
 }
 
+
+function compactApplyImportedPayload(form) {
+  if (!form || form.dataset.applyPayloadCompacted === '1') return;
+  const allowedNames = new Set(['company_id', 'imported_template_id', 'imported_template_group_id']);
+  form.querySelectorAll('input, select, textarea').forEach((field) => {
+    const name = field.getAttribute('name') || '';
+    if (!allowedNames.has(name)) {
+      field.dataset.applyPrunedDisabled = '1';
+      field.disabled = true;
+    }
+  });
+  form.dataset.applyPayloadCompacted = '1';
+}
+
 const pgrForm = document.getElementById('pgrSelectionForm');
 if (pgrForm) {
   pgrForm.addEventListener('submit', (event) => {
     const submitter = event.submitter;
     const action = submitter ? (submitter.getAttribute('formaction') || '') : '';
+    if (action.includes('/aplicar-modelo-importado')) {
+      const company = document.getElementById('companySelect');
+      const model = document.getElementById('importedTemplateSelect');
+      if (company && !company.value) {
+        event.preventDefault();
+        company.focus();
+        alert('Selecione a empresa antes de aplicar o modelo importado.');
+        return;
+      }
+      if (model && !model.value) {
+        event.preventDefault();
+        model.focus();
+        alert('Selecione um modelo importado antes de aplicar.');
+        return;
+      }
+      compactApplyImportedPayload(pgrForm);
+      return;
+    }
     const isComplete = action.includes('gerar-pgr-completo') || action.includes('gerar-pcmso-completo') || action.includes('gerar-ltcat-completo') || action.includes('gerar-pgr-aet-psicossocial') || action.includes('gerar-aet-completa') || action.includes('gerar-pacote-empresa');
     if (!isComplete) return;
 
@@ -762,9 +794,16 @@ if (suggestExamsBtn && pgrForm) {
     const originalText = suggestExamsBtn.textContent;
     suggestExamsBtn.textContent = 'Sugerindo...';
     try {
+      const fd = new FormData();
+      selectedPgrSectorIds().forEach((sectorId) => {
+        fd.append('pgr_sector_ids', sectorId);
+        document.querySelectorAll(`input[name="sector_risk_ids_${CSS.escape(sectorId)}"]:checked`).forEach((riskBox) => {
+          fd.append(`sector_risk_ids_${sectorId}`, riskBox.value);
+        });
+      });
       const response = await fetch('/api/sugerir-exames', {
         method: 'POST',
-        body: new FormData(pgrForm),
+        body: fd,
         headers: { 'X-Requested-With': 'XMLHttpRequest' },
       });
       const payload = await response.json();
@@ -979,6 +1018,10 @@ if (suggestExamsBtn && pgrForm) {
     const form = ev.target;
     if (!form || !form.matches || !form.matches('#pgrSelectionForm')) return;
     if (isApplyImportedSubmitter(ev.submitter)) {
+      const company = document.getElementById('companySelect');
+      const model = document.getElementById('importedTemplateSelect');
+      if ((company && !company.value) || (model && !model.value)) return;
+      compactApplyImportedPayload(form);
       showApplyLoading();
       if (ev.submitter) {
         ev.submitter.disabled = true;

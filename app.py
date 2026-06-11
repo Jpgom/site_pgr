@@ -381,6 +381,29 @@ class ImportedLaudoTemplate(db.Model):
         }
 
 
+class ImportedLaudoDraft(db.Model):
+    """Rascunho de importação salvo no banco.
+
+    Evita enviar JSON gigante em campos ocultos no formulário de revisão.
+    O upload lê o laudo, grava tudo aqui e a tela de revisão envia somente o ID.
+    """
+
+    __tablename__ = "imported_laudo_drafts"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    state = db.Column(db.JSON, nullable=False, default=dict)
+    expires_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "state": self.state or {},
+            "expires_at": self.expires_at.strftime("%Y-%m-%d %H:%M:%S") if self.expires_at else "",
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else "",
+        }
+
+
 FORM_OPTIONS = {
     "tipos_risco": list(TIPO_RISCO_COLORS.keys()),
     "severidades": list(SEVERIDADE_COLORS.keys()),
@@ -718,6 +741,42 @@ def _cleanup_expired_temp_import_groups() -> None:
     db.session.commit()
 
 
+
+
+def _cleanup_old_import_drafts() -> None:
+    """Remove rascunhos antigos de importação para não acumular JSON no banco."""
+    now = datetime.utcnow()
+    old_drafts = ImportedLaudoDraft.query.filter(
+        ImportedLaudoDraft.expires_at != None,  # noqa: E711
+        ImportedLaudoDraft.expires_at < now,
+    ).all()
+    if not old_drafts:
+        return
+    for draft in old_drafts:
+        db.session.delete(draft)
+    db.session.commit()
+
+
+def _create_import_draft(extracted: dict[str, Any]) -> ImportedLaudoDraft:
+    draft = ImportedLaudoDraft(
+        state=extracted or {},
+        expires_at=datetime.utcnow() + timedelta(hours=12),
+    )
+    db.session.add(draft)
+    db.session.commit()
+    return draft
+
+
+def _get_import_draft(draft_id: str | None) -> ImportedLaudoDraft | None:
+    if not draft_id:
+        return None
+    draft = db.session.get(ImportedLaudoDraft, draft_id)
+    if draft and draft.expires_at and draft.expires_at < datetime.utcnow():
+        db.session.delete(draft)
+        db.session.commit()
+        return None
+    return draft
+
 def _create_temp_import_group(company: Company, template: ImportedLaudoTemplate) -> SectorGroup:
     base = f"TEMP - {company.nome or 'EMPRESA'} - {template.nome or 'MODELO'}"
     short = re.sub(r"\s+", " ", base).strip()[:180]
@@ -735,6 +794,7 @@ def init_database() -> None:
     _migrate_json_files_if_needed()
     _ensure_standard_complementary_exams()
     _cleanup_expired_temp_import_groups()
+    _cleanup_old_import_drafts()
 
 
 def _field(name: str) -> str:
@@ -2860,70 +2920,92 @@ def juntar_arquivos():
 @app.route("/importar-laudo-antigo", methods=["GET", "POST"])
 def importar_laudo_antigo():
     extracted = None
+    draft_id = request.args.get("draft_id", "").strip()
+    draft = _get_import_draft(draft_id)
+    if draft:
+        extracted = draft.state or {}
     if request.method == "POST":
         try:
             file_storage = request.files.get("arquivo")
             text_value = _extract_text_from_upload(file_storage)
             extracted = _smart_extract_laudo_data(text_value)
+            draft = _create_import_draft(extracted)
             flash("Leitura concluída. Revise os dados extraídos antes de salvar no sistema.", "success")
+            return redirect(url_for("importar_laudo_antigo", draft_id=draft.id))
         except Exception as exc:
             flash(f"Erro ao importar laudo antigo: {exc}", "error")
-    return render_template("importar_laudo.html", extracted=extracted or {}, groups=_sorted_groups(), risks=_sorted_risks(), exams=_sorted_exams())
+    return render_template(
+        "importar_laudo.html",
+        extracted=extracted or {},
+        draft_id=draft.id if draft else "",
+        groups=_sorted_groups(),
+        risks=_sorted_risks(),
+        exams=_sorted_exams(),
+        imported_templates=_sorted_imported_laudo_templates(),
+    )
 
 
 @app.post("/importar-laudo-antigo/salvar")
 def salvar_importacao_laudo_antigo():
-    empresa = _field("empresa")
-    cnpj = _field("cnpj")
+    draft = _get_import_draft(_field("draft_id"))
+    draft_state = dict(draft.state or {}) if draft else {}
+
+    empresa = _field("empresa") or draft_state.get("empresa", "")
+    cnpj = _field("cnpj") or draft_state.get("cnpj", "")
     setores_text = _field("setores_extraidos")
     riscos_text = _field("riscos_extraidos")
     exames_text = _field("exames_extraidos")
     group_id = _field("grupo_id") or None
 
     company_fields = {
-        "endereco": _field("endereco"),
-        "bairro_cidade": _field("bairro_cidade"),
-        "cep": _field("cep"),
-        "cnae1": _field("cnae1"),
-        "descricao1": _field("descricao1"),
-        "grau1": _field("grau1"),
-        "cnae2": _field("cnae2"),
-        "descricao2": _field("descricao2"),
-        "grau2": _field("grau2"),
-        "funcionarios": _field("funcionarios"),
-        "data_atual": _field("data_atual"),
-        "data_final": _field("data_final"),
-        "email": _field("email"),
-        "fone": _field("fone"),
+        "endereco": _field("endereco") or draft_state.get("endereco", ""),
+        "bairro_cidade": _field("bairro_cidade") or draft_state.get("bairro_cidade", ""),
+        "cep": _field("cep") or draft_state.get("cep", ""),
+        "cnae1": _field("cnae1") or draft_state.get("cnae1", ""),
+        "descricao1": _field("descricao1") or draft_state.get("descricao1", ""),
+        "grau1": _field("grau1") or draft_state.get("grau1", ""),
+        "cnae2": _field("cnae2") or draft_state.get("cnae2", ""),
+        "descricao2": _field("descricao2") or draft_state.get("descricao2", ""),
+        "grau2": _field("grau2") or draft_state.get("grau2", ""),
+        "funcionarios": _field("funcionarios") or draft_state.get("funcionarios", ""),
+        "data_atual": _field("data_atual") or draft_state.get("data_atual", ""),
+        "data_final": _field("data_final") or draft_state.get("data_final", ""),
+        "email": _field("email") or draft_state.get("email", ""),
+        "fone": _field("fone") or draft_state.get("fone", ""),
     }
 
-    try:
-        setores_json = json.loads(_field("setores_json") or "[]")
-        if not isinstance(setores_json, list):
-            setores_json = []
-    except Exception:
+    setores_json = draft_state.get("setores_cargos") or []
+    riscos_json = draft_state.get("riscos_detalhados") or []
+    sector_risks_json = draft_state.get("sector_risks") or {}
+    if not isinstance(setores_json, list):
         setores_json = []
-    try:
-        riscos_json = json.loads(_field("riscos_json") or "[]")
-        if not isinstance(riscos_json, list):
-            riscos_json = []
-    except Exception:
+    if not isinstance(riscos_json, list):
         riscos_json = []
-    try:
-        sector_risks_json = json.loads(_field("sector_risks_json") or "{}")
-        if not isinstance(sector_risks_json, dict):
-            sector_risks_json = {}
-    except Exception:
+    if not isinstance(sector_risks_json, dict):
         sector_risks_json = {}
 
-    if not empresa and not cnpj and not setores_text and not riscos_text and not exames_text and not setores_json and not riscos_json and not sector_risks_json:
+    setores_linhas = _unique_clean_lines((setores_text or "\n".join(draft_state.get("setores") or [])).splitlines())
+    riscos_linhas = _unique_clean_lines((riscos_text or "\n".join(draft_state.get("riscos") or [])).splitlines())
+    exames_linhas = _unique_clean_lines((exames_text or "\n".join(draft_state.get("exames") or [])).splitlines())
+
+    # Se o usuário adicionou manualmente nomes no textarea, preserva como setor/risco simples.
+    existing_sector_keys = {_simple_norm(item.get("setor", "")) for item in setores_json if isinstance(item, dict)}
+    for setor_nome in setores_linhas:
+        if _simple_norm(setor_nome) and _simple_norm(setor_nome) not in existing_sector_keys:
+            setores_json.append({"setor": setor_nome.upper(), "cargos": []})
+            existing_sector_keys.add(_simple_norm(setor_nome))
+
+    existing_risk_keys = {_simple_norm(item.get("risco", "")) for item in riscos_json if isinstance(item, dict)}
+    for risco_nome in riscos_linhas:
+        if _simple_norm(risco_nome) and _simple_norm(risco_nome) not in existing_risk_keys:
+            riscos_json.append({"risco": risco_nome})
+            existing_risk_keys.add(_simple_norm(risco_nome))
+
+    if not empresa and not cnpj and not setores_json and not riscos_json and not sector_risks_json and not exames_linhas:
         flash("Nenhum dado foi informado para salvar.", "error")
         return redirect(url_for("importar_laudo_antigo"))
 
-    # Novo comportamento: a importação guarda um MODELO REUTILIZÁVEL de laudo antigo.
-    # Assim, os setores/cargos/riscos/exames extraídos podem ser aplicados depois em qualquer empresa,
-    # sem ficarem presos à empresa original do arquivo enviado.
-    company_created = False
+    # Salva/atualiza a empresa de origem apenas para consulta; o modelo é reutilizável em qualquer empresa.
     if empresa or cnpj:
         company = None
         if cnpj:
@@ -2933,7 +3015,6 @@ def salvar_importacao_laudo_antigo():
         if not company:
             company = Company(nome=empresa or "Empresa importada", cnpj=cnpj or "")
             db.session.add(company)
-            company_created = True
         else:
             if empresa:
                 company.nome = empresa
@@ -2948,12 +3029,12 @@ def salvar_importacao_laudo_antigo():
         "empresa": empresa,
         "cnpj": cnpj,
         **company_fields,
-        "setores": _unique_clean_lines(setores_text.splitlines()),
+        "setores": setores_linhas,
         "setores_cargos": setores_json,
-        "riscos": _unique_clean_lines(riscos_text.splitlines()),
+        "riscos": riscos_linhas,
         "riscos_detalhados": riscos_json,
         "sector_risks": sector_risks_json,
-        "exames": _unique_clean_lines(exames_text.splitlines()),
+        "exames": exames_linhas,
         "grupo_id_preferencial": group_id or "",
     }
     template = ImportedLaudoTemplate(
@@ -2963,176 +3044,40 @@ def salvar_importacao_laudo_antigo():
         state=template_state,
     )
     db.session.add(template)
+    if draft:
+        db.session.delete(draft)
     db.session.commit()
     sector_total = len(template_state["setores_cargos"] or template_state["setores"])
     risk_total = len(template_state["riscos_detalhados"] or template_state["riscos"])
     linked_total = sum(len(v) for v in (template_state.get("sector_risks") or {}).values() if isinstance(v, list))
     exam_total = len(template_state["exames"])
     flash(
-        f"Importação salva como modelo reutilizável: {template.nome}. Foram guardados {sector_total} setor(es)/grupo(s), {risk_total} risco(s), {linked_total} vínculo(s) risco/setor e {exam_total} exame(s). Agora vá em Gerar laudos, selecione qualquer empresa e aplique este modelo importado.",
+        f"Modelo reutilizável salvo: {template.nome}. Guardado no banco: {sector_total} setor(es)/grupo(s), {risk_total} risco(s), {linked_total} vínculo(s) risco/setor e {exam_total} exame(s). Agora aplique em qualquer empresa pela aba Gerar laudos.",
         "success",
     )
     return redirect(url_for("importar_laudo_antigo"))
 
-    company_created = False
-    if empresa or cnpj:
-        company = None
-        if cnpj:
-            company = Company.query.filter(db.func.lower(Company.cnpj) == cnpj.lower()).first()
-        if not company and empresa:
-            company = Company.query.filter(db.func.lower(Company.nome) == empresa.lower()).first()
-        if not company:
-            company = Company(nome=empresa or "Empresa importada", cnpj=cnpj or "")
-            db.session.add(company)
-            company_created = True
-        else:
-            if empresa:
-                company.nome = empresa
-            if cnpj:
-                company.cnpj = cnpj
-        for key, value in company_fields.items():
-            if value:
-                setattr(company, key, value)
 
-    sector_count = 0
-    sector_created_count = 0
-    sector_updated_count = 0
-    cargo_import_count = 0
-    # Se houver estrutura com cargos vinda do Word, usa ela. Caso contrário usa uma linha por setor.
-    structured_sector_names = set()
-    for item in setores_json:
-        setor_name = re.sub(r"\s+", " ", str(item.get("setor", "")).strip()).upper()
-        if not setor_name:
-            continue
-        structured_sector_names.add(_simple_norm(setor_name))
-        cargos_raw = item.get("cargos") or []
-        cargos = []
-        for cargo in cargos_raw:
-            cargo_nome = re.sub(r"\s+", " ", str(cargo.get("cargo", "")).strip()).upper() or "A DEFINIR"
-            cargos.append({
-                "id": uuid.uuid4().hex,
-                "cargo": cargo_nome,
-                "cbo": str(cargo.get("cbo") or "A DEFINIR").strip(),
-                "n_func": str(cargo.get("n_func") or "1").strip(),
-                "descricao": str(cargo.get("descricao") or "Atividade importada de laudo antigo; revisar e detalhar conforme função.").strip(),
-            })
-        if not cargos:
-            cargos = [{"id": uuid.uuid4().hex, "cargo": "A DEFINIR", "cbo": "A DEFINIR", "n_func": "1", "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função."}]
-        existing = Sector.query.filter(db.func.lower(Sector.setor) == setor_name.lower()).first()
-        if not existing:
-            db.session.add(Sector(setor=setor_name, group_id=group_id, cargos=cargos))
-            sector_count += 1
-            sector_created_count += 1
-            cargo_import_count += len(cargos)
-        else:
-            if group_id:
-                existing.group_id = group_id
-            old_cargos = existing.cargos or []
-            old_keys = {(_simple_norm(str(c.get("cargo", ""))) + "|" + _simple_norm(str(c.get("cbo", "")))) for c in old_cargos}
-            merged_cargos = list(old_cargos)
-            added_cargo = 0
-            for cargo_item in cargos:
-                cargo_key = _simple_norm(str(cargo_item.get("cargo", ""))) + "|" + _simple_norm(str(cargo_item.get("cbo", "")))
-                if cargo_key not in old_keys:
-                    merged_cargos.append(cargo_item)
-                    old_keys.add(cargo_key)
-                    added_cargo += 1
-            if not old_cargos or all(str(c.get("cargo", "")).upper() == "A DEFINIR" for c in old_cargos):
-                existing.cargos = cargos
-                added_cargo = len(cargos)
-            elif added_cargo:
-                existing.cargos = merged_cargos
-            sector_count += 1
-            sector_updated_count += 1
-            cargo_import_count += added_cargo
-
-    for line in _unique_clean_lines(setores_text.splitlines()):
-        if _simple_norm(line) in structured_sector_names:
-            continue
-        existing = Sector.query.filter(db.func.lower(Sector.setor) == line.lower()).first()
-        if not existing:
-            db.session.add(Sector(setor=line.upper(), group_id=group_id, cargos=[{
-                "id": uuid.uuid4().hex,
-                "cargo": "A DEFINIR",
-                "cbo": "A DEFINIR",
-                "n_func": "1",
-                "descricao": "Atividades importadas de laudo antigo; revisar e detalhar conforme função.",
-            }]))
-            sector_count += 1
-            sector_created_count += 1
-            cargo_import_count += 1
-        else:
-            if group_id:
-                existing.group_id = group_id
-            sector_count += 1
-            sector_updated_count += 1
-
-    detailed_by_name: dict[str, dict[str, str]] = {}
-    for item in riscos_json:
-        name = re.sub(r"\s+", " ", str(item.get("risco", "")).strip())
-        if name:
-            detailed_by_name[_simple_norm(name)] = item
-
-    risk_count = 0
-    for line in _unique_clean_lines(riscos_text.splitlines()):
-        existing = Risk.query.filter(db.func.lower(Risk.risco) == line.lower()).first()
-        if not existing:
-            detail = detailed_by_name.get(_simple_norm(line), {})
-            db.session.add(Risk(
-                risco=line,
-                acoes=detail.get("acoes") or "Revisar ações preventivas/corretivas conforme atividade e atualizar com treinamentos NR aplicáveis.",
-                indicador="Acompanhar implementação das medidas, registros de orientação e ausência de ocorrências relacionadas.",
-                tipo_risco=(detail.get("tipo_risco") or "ERGONÔMICO").strip().upper(),
-                descricao_agente=detail.get("risco") or line,
-                possiveis_lesoes=detail.get("possiveis_lesoes") or "Revisar possíveis lesões ou agravos conforme o risco importado.",
-                fontes_circunstancias=detail.get("fontes_circunstancias") or "Informação importada de laudo antigo; revisar fontes ou circunstâncias.",
-                epis=detail.get("epis") or "A definir conforme avaliação técnica.",
-                epcs=detail.get("epcs") or "A definir conforme avaliação técnica.",
-                grau_severidade=(detail.get("grau_severidade") or "MÉDIO").strip().upper(),
-                grau_possibilidade=(detail.get("grau_possibilidade") or "POSSÍVEL").strip().upper(),
-                grau_nivel_risco=(detail.get("grau_nivel_risco") or "MODERADO").strip().upper(),
-            ))
-            risk_count += 1
-
-    exam_count = 0
-    for line in _unique_clean_lines(exames_text.splitlines()):
-        existing = Exam.query.filter(db.func.lower(Exam.exame) == line.lower()).first()
-        if not existing:
-            db.session.add(Exam(exame=line, periodicidade="Conforme PCMSO"))
-            exam_count += 1
-
-    db.session.commit()
-    flash(f"Importação salva: empresa {'criada' if company_created else 'atualizada/verificada'}, {sector_count} setor(es) processado(s) ({sector_created_count} novo(s) e {sector_updated_count} atualizado(s)), {cargo_import_count} cargo(s) importado(s), {risk_count} risco(s) novo(s) e {exam_count} exame(s) novo(s). Revise os cadastros importados antes de gerar laudos.", "success")
+@app.post("/modelos-importados/<template_id>/excluir")
+def delete_imported_template(template_id: str):
+    template = db.session.get(ImportedLaudoTemplate, template_id)
+    if template:
+        db.session.delete(template)
+        db.session.commit()
+        flash("Modelo importado excluído. Os cadastros manuais de riscos, setores e exames não foram apagados.", "success")
+    else:
+        flash("Modelo importado não encontrado.", "error")
     return redirect(url_for("importar_laudo_antigo"))
 
-@app.post("/juntar-arquivos")
-def merge_files_avulso():
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            tmpdir = Path(tmp)
-            pgr_docx = _save_uploaded_file(request.files.get("pgr_docx"), tmpdir, {".docx"}, "PGR em Word (.docx)")
-            aet_docx = _save_uploaded_file(request.files.get("aet_docx"), tmpdir, {".docx"}, "AET em Word (.docx)")
-            psicossocial_pdf = _save_uploaded_file(request.files.get("psicossocial_pdf"), tmpdir, {".pdf"}, "Relatório Psicossocial em PDF")
-            company_id = _field("company_id")
-            company = db.session.get(Company, company_id) if company_id else None
-            empresa = _field("empresa_avulsa") or (company.nome if company else "")
-            data_criacao = _field("data_criacao_laudo")
-            mes_extenso = _field("mes_extenso")
-            if not empresa:
-                raise ValueError("Informe ou selecione a empresa para preencher as páginas intermediárias.")
-            if not data_criacao and not mes_extenso:
-                raise ValueError("Informe a data de criação do laudo ou o mês por extenso para preencher as páginas intermediárias.")
-            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-            output_path = OUTPUT_DIR / f"pgr_aet_psicossocial_{stamp}.docx"
-            _build_combined_pgr_aet_psychosocial(pgr_docx, aet_docx, psicossocial_pdf, output_path, empresa, data_criacao, mes_extenso)
-            return _send_docx_with_cleanup(output_path, "PGR_AET_RELATORIO_PSICOSSOCIAL.docx")
-    except Exception as exc:
-        message = f"Erro ao juntar arquivos: {exc}"
-        if _is_ajax_request():
-            return _ajax_error(message)
-        flash(message, "error")
-        return redirect(url_for("juntar_arquivos"))
+
+@app.post("/modelos-importados/excluir-todos")
+def delete_all_imported_templates():
+    count = ImportedLaudoTemplate.query.delete()
+    ImportedLaudoDraft.query.delete()
+    db.session.commit()
+    flash(f"{count} modelo(s) importado(s) excluído(s). Os cadastros manuais foram preservados.", "success")
+    return redirect(url_for("importar_laudo_antigo"))
+
 
 @app.route("/grupos-riscos")
 def risk_groups():
