@@ -155,3 +155,11 @@ MAX_FORM_PARTS=500000
 - A etapa AET da tela **Gerar laudos** agora possui link para consultar os modelos disponíveis.
 - O botão **Aplicar sugestões do CNAE** usa CNAE principal, CNAE secundário, descrição da atividade e nome da empresa para pré-preencher o formulário de AET.
 - Foram adicionados modelos para comércio/vestuário, mercados, administrativo, limpeza, condomínios/portaria, restaurantes, clínicas, oficinas, construção civil, logística/transporte, escolas, estética, postos e atividades rurais.
+
+
+## V44 - Recibos eSocial
+
+- Nova aba **Recibos eSocial**.
+- Converte a planilha RELFUNCGERAL (.xls exportado como HTML ou .xlsx) em PDF A4 paisagem.
+- O PDF mantém todas as colunas principais na mesma folha e usa somente: EVENTO, empresa, NOME, CPF, TIPO, STATUS, DATA, Recibo eSocial e Recibo Sefaz.
+- A coluna unidade e demais colunas extras são ignoradas automaticamente.

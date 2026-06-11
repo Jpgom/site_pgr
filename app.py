@@ -8,6 +8,7 @@ import tempfile
 import uuid
 import zipfile
 from datetime import datetime, timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -1705,6 +1706,256 @@ def _send_zip_with_cleanup(path: Path, download_name: str):
     return response
 
 
+
+def _send_pdf_with_cleanup(path: Path, download_name: str):
+    response = send_file(path, as_attachment=True, download_name=download_name, mimetype="application/pdf")
+    @response.call_on_close
+    def _cleanup() -> None:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    return response
+
+
+class _HtmlTableParser(HTMLParser):
+    """Leitor simples para arquivos .xls exportados como HTML pelo sistema."""
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.in_table = 0
+        self.in_row = False
+        self.in_cell = False
+        self.current_row: list[str] = []
+        self.current_cell: list[str] = []
+        self.rows: list[list[str]] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:  # noqa: ANN001
+        tag = tag.lower()
+        if tag == "table":
+            self.in_table += 1
+        elif self.in_table and tag == "tr":
+            self.in_row = True
+            self.current_row = []
+        elif self.in_table and self.in_row and tag in {"td", "th"}:
+            self.in_cell = True
+            self.current_cell = []
+        elif self.in_cell and tag in {"br", "p"}:
+            self.current_cell.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in {"td", "th"} and self.in_cell:
+            value = " ".join("".join(self.current_cell).replace("\xa0", " ").split())
+            self.current_row.append(value)
+            self.current_cell = []
+            self.in_cell = False
+        elif tag == "tr" and self.in_row:
+            if any(str(cell).strip() for cell in self.current_row):
+                self.rows.append(self.current_row)
+            self.current_row = []
+            self.in_row = False
+        elif tag == "table" and self.in_table:
+            self.in_table -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self.in_cell:
+            self.current_cell.append(data)
+
+
+def _receipt_norm_header(value: Any) -> str:
+    import unicodedata
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
+RECEIPT_PDF_COLUMNS = [
+    ("evento", "EVENTO"),
+    ("empresa", "empresa"),
+    ("nome", "NOME"),
+    ("cpf", "CPF"),
+    ("tipo", "TIPO"),
+    ("status", "STATUS"),
+    ("data", "DATA"),
+    ("reciboesocial", "Recibo\neSocial"),
+    ("recibosefaz", "Recibo\nSefaz"),
+]
+
+
+def _parse_html_table_rows(path: Path) -> list[list[str]]:
+    raw = path.read_bytes()
+    try:
+        html = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        html = raw.decode("latin-1", errors="ignore")
+    parser = _HtmlTableParser()
+    parser.feed(html)
+    return parser.rows
+
+
+def _parse_xlsx_table_rows(path: Path) -> list[list[str]]:
+    if load_workbook is None:
+        raise RuntimeError("A biblioteca openpyxl não está instalada. Verifique o requirements.txt no Render.")
+    wb = load_workbook(path, data_only=True, read_only=True)
+    ws = wb.active
+    rows: list[list[str]] = []
+    for row in ws.iter_rows(values_only=True):
+        values: list[str] = []
+        for value in row:
+            if value is None:
+                values.append("")
+            elif isinstance(value, datetime):
+                values.append(value.strftime("%d/%m/%Y"))
+            else:
+                values.append(str(value).strip())
+        if any(values):
+            rows.append(values)
+    return rows
+
+
+def _read_receipt_spreadsheet(path: Path) -> list[dict[str, str]]:
+    """Lê RELFUNCGERAL (.xls HTML ou .xlsx) e retorna somente as colunas usadas no PDF."""
+    raw_head = path.read_bytes()[:512].lstrip().lower()
+    ext = path.suffix.lower()
+    if raw_head.startswith(b"<!doctype") or raw_head.startswith(b"<html") or b"<table" in raw_head:
+        rows = _parse_html_table_rows(path)
+    elif ext == ".xlsx":
+        rows = _parse_xlsx_table_rows(path)
+    else:
+        raise ValueError("Arquivo não reconhecido. Envie a planilha RELFUNCGERAL em .xls exportado do sistema ou .xlsx.")
+
+    if not rows:
+        raise ValueError("Não encontrei nenhuma tabela na planilha enviada.")
+
+    header_index = None
+    header_map: dict[str, int] = {}
+    required = {key for key, _ in RECEIPT_PDF_COLUMNS}
+    for idx, row in enumerate(rows[:25]):
+        normed = [_receipt_norm_header(cell) for cell in row]
+        found = {name for name in normed if name in required}
+        if len(found) >= 5:
+            header_index = idx
+            for col_idx, name in enumerate(normed):
+                if name in required and name not in header_map:
+                    header_map[name] = col_idx
+            break
+    if header_index is None:
+        raise ValueError("Não localizei o cabeçalho da planilha. Confirme se ela possui as colunas EVENTO, empresa, NOME, CPF, TIPO, STATUS, DATA, Recibo eSocial e Recibo Sefaz.")
+
+    data_rows: list[dict[str, str]] = []
+    for row in rows[header_index + 1:]:
+        item: dict[str, str] = {}
+        for key, _label in RECEIPT_PDF_COLUMNS:
+            col_idx = header_map.get(key)
+            item[key] = str(row[col_idx]).strip() if col_idx is not None and col_idx < len(row) else ""
+        if any(item.values()):
+            data_rows.append(item)
+    if not data_rows:
+        raise ValueError("A planilha foi lida, mas não encontrei linhas de recibos para converter.")
+    return data_rows
+
+
+def _wrap_pdf_text(page, text: str, max_width: float, fontname: str, fontsize: float) -> list[str]:  # noqa: ANN001
+    import fitz
+    raw = str(text or "").replace("\r", "\n")
+    explicit_parts = [part.strip() for part in raw.split("\n")]
+    lines: list[str] = []
+
+    def append_long_token(token: str) -> None:
+        chunk = token
+        while chunk:
+            cut = 1
+            for i in range(1, len(chunk) + 1):
+                if fitz.get_text_length(chunk[:i], fontname=fontname, fontsize=fontsize) > max_width:
+                    break
+                cut = i
+            lines.append(chunk[:cut].strip())
+            chunk = chunk[cut:]
+
+    for part in explicit_parts:
+        part = " ".join(part.split())
+        if not part:
+            lines.append("")
+            continue
+        current = ""
+        for word in part.split(" "):
+            candidate = f"{current} {word}".strip() if current else word
+            if fitz.get_text_length(candidate, fontname=fontname, fontsize=fontsize) <= max_width:
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+                current = ""
+            # Quebra trechos longos, como recibos/UUID, preservando palavras normais com espaços.
+            if fitz.get_text_length(word, fontname=fontname, fontsize=fontsize) <= max_width:
+                current = word
+            else:
+                append_long_token(word)
+        if current:
+            lines.append(current)
+    return lines or [""]
+
+
+def _draw_centered_cell(page, rect, text: str, fontname: str, fontsize: float, color=(0, 0, 0)) -> None:  # noqa: ANN001
+    lines = _wrap_pdf_text(page, text, rect.width - 8, fontname, fontsize)
+    line_height = fontsize * 1.18
+    total_height = line_height * len(lines)
+    y = rect.y0 + max(3, (rect.height - total_height) / 2)
+    for line in lines:
+        text_width = page.get_text_length(line, fontname=fontname, fontsize=fontsize)
+        x = rect.x0 + max(3, (rect.width - text_width) / 2)
+        page.insert_text((x, y + fontsize), line, fontname=fontname, fontsize=fontsize, color=color)
+        y += line_height
+
+
+def _build_receipts_pdf(rows: list[dict[str, str]], output_path: Path) -> Path:
+    import fitz
+    if not rows:
+        raise ValueError("Não há recibos para gerar o PDF.")
+    page_width, page_height = 841.89, 595.28  # A4 paisagem em pontos
+    margin_x = 12
+    margin_top = 14
+    margin_bottom = 14
+    inner_width = page_width - (margin_x * 2)
+    # Proporções ajustadas para todas as colunas caberem na mesma folha em paisagem.
+    proportions = [0.073, 0.115, 0.170, 0.112, 0.100, 0.105, 0.092, 0.105, 0.128]
+    widths = [inner_width * p for p in proportions]
+    header_height = 38
+    body_font = 11
+    header_font = 12
+    doc = fitz.open()
+
+    def new_page():
+        page = doc.new_page(width=page_width, height=page_height)
+        x = margin_x
+        y = margin_top
+        for idx, (_key, label) in enumerate(RECEIPT_PDF_COLUMNS):
+            rect = fitz.Rect(x, y, x + widths[idx], y + header_height)
+            page.draw_rect(rect, color=(0, 0, 0), fill=(0.36, 0.36, 0.36), width=0.9)
+            _draw_centered_cell(page, rect, label, "hebo", header_font, color=(1, 1, 1))
+            x += widths[idx]
+        return page, margin_top + header_height
+
+    page, y = new_page()
+    for item in rows:
+        line_counts = []
+        for idx, (key, _label) in enumerate(RECEIPT_PDF_COLUMNS):
+            line_counts.append(len(_wrap_pdf_text(page, item.get(key, ""), widths[idx] - 8, "helv", body_font)))
+        row_height = max(52, max(line_counts) * body_font * 1.28 + 14)
+        if y + row_height > page_height - margin_bottom:
+            page, y = new_page()
+        x = margin_x
+        for idx, (key, _label) in enumerate(RECEIPT_PDF_COLUMNS):
+            rect = fitz.Rect(x, y, x + widths[idx], y + row_height)
+            page.draw_rect(rect, color=(0, 0, 0), width=0.9)
+            _draw_centered_cell(page, rect, item.get(key, ""), "helv", body_font, color=(0, 0, 0))
+            x += widths[idx]
+        y += row_height
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_path), deflate=True, garbage=4)
+    doc.close()
+    return output_path
+
 def _normalize_import_header(value: Any) -> str:
     import re
     import unicodedata
@@ -3083,6 +3334,32 @@ def merge_files_avulso():
 @app.route("/juntar-arquivos")
 def juntar_arquivos():
     return render_template("juntar.html", companies=_sorted_companies(), today=datetime.now().strftime("%d/%m/%Y"))
+
+
+
+@app.route("/recibos-esocial", methods=["GET", "POST"])
+def recibos_esocial():
+    if request.method == "POST":
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                tmpdir = Path(tmp)
+                planilha = _save_uploaded_file(
+                    request.files.get("planilha"),
+                    tmpdir,
+                    {".xls", ".xlsx"},
+                    "Planilha de recibos RELFUNCGERAL (.xls ou .xlsx)",
+                )
+                rows = _read_receipt_spreadsheet(planilha)
+                empresa = rows[0].get("empresa", "RECIBOS") if rows else "RECIBOS"
+                safe_empresa = _normalize_filename(empresa)
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                output_path = OUTPUT_DIR / f"recibos_esocial_{safe_empresa}_{stamp}.pdf"
+                _build_receipts_pdf(rows, output_path)
+                return _send_pdf_with_cleanup(output_path, f"RECIBO_{safe_empresa}.pdf")
+        except Exception as exc:
+            flash(f"Erro ao formatar recibos: {exc}", "error")
+    return render_template("recibos_esocial.html")
 
 
 @app.route("/importar-laudo-antigo", methods=["GET", "POST"])
