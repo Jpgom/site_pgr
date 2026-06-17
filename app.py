@@ -43,6 +43,8 @@ from word_generator import (
     generate_riscos_pcmso_docx,
     generate_pgr_docx,
     generate_relacao_funcao_atividade_docx,
+    apply_default_docx_font,
+    save_docx_with_default_font,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -587,6 +589,17 @@ AET_CNAE_PRESETS = [
         "exames_sugeridos": ["Exame clínico", "Acuidade visual", "Audiometria quando houver ruído", "ECG quando aplicável"],
         "general": {"tipo_documento": "AET completa com formulário ergonômico", "motivo_analise": "Atendimento à NR-17 e avaliação de atividades técnicas e de manutenção", "condicao_ergonomica_geral": "Adequada com recomendações"},
         "sector": {"postura": ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"], "tipo_atividade": "Instalação, manutenção, inspeção, uso de ferramentas e deslocamentos técnicos", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Moderada", "ritmo_trabalho": "Por ordens de serviço, chamados e demandas técnicas", "pausas": "Pausas conforme intensidade e alternância de tarefas", "mobiliario": "Não aplicável diretamente; avaliar ferramentas, bancadas e acesso aos equipamentos", "ambiente": "A avaliar circulação, ruído, iluminação, calor/frio e espaço de trabalho", "organizacao": "Demandas variáveis, deslocamento, prazos e necessidade de procedimentos", "equipamentos": "Ferramentas manuais, escadas, equipamentos técnicos, instrumentos e materiais", "fatores": ["Posturas incômodas", "Atenção contínua", "Manuseio de materiais", "Deslocamentos no setor"], "medidas": ["Ferramentas adequadas", "Rodízio de tarefas", "Pausas breves", "Organização do posto", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração"},
+    },
+    {
+        "keywords": ["96.03", "9603", "funerária", "funeraria", "funerárias", "funerarias", "serviços funerários", "servicos funerarios", "somatoconservação", "somatoconservacao", "assistência póstuma", "assistencia postuma"],
+        "label": "Serviços funerários / assistência póstuma",
+        "categoria": "Serviços especializados",
+        "cnaes_referencia": ["96.03-3-04", "96.03-3-05"],
+        "setores_sugeridos": ["ATENDIMENTO", "ADMINISTRATIVO", "OPERACIONAL", "HIGIENIZAÇÃO", "TRANSPORTE", "VENDAS"],
+        "riscos_sugeridos": ["Exigência emocional elevada", "Atenção contínua", "Baixa autonomia", "Conflitos interpessoais", "Postura em pé/sentada prolongada"],
+        "exames_sugeridos": ["Exame clínico", "Anamnese ocupacional", "Anamnese psicossocial quando aplicável", "Acuidade visual"],
+        "general": {"tipo_documento": "AET completa com análise ergonômica e psicossocial", "motivo_analise": "Atendimento à NR-17, NR-01 e avaliação das exigências emocionais, organizacionais e operacionais", "condicao_ergonomica_geral": "Adequada com recomendações"},
+        "sector": {"postura": ["Sentado", "Em pé", "Deslocamento frequente", "Alternado"], "tipo_atividade": "Atendimento, apoio operacional, higienização, transporte, organização documental e suporte às rotinas funerárias", "exigencia_fisica": "Moderada", "exigencia_cognitiva": "Elevada", "ritmo_trabalho": "Por demanda de atendimento, suporte operacional e necessidades do serviço", "pausas": "Pausas conforme escala, demanda emocional e organização do setor", "mobiliario": "A avaliar cadeiras, mesas, balcões, assentos de veículos e áreas de apoio", "ambiente": "A avaliar privacidade, conforto térmico, iluminação, circulação e condições dos ambientes de atendimento/operação", "organizacao": "Demandas sensíveis, comunicação cuidadosa, atendimento humanizado, prioridades variáveis e suporte da liderança", "equipamentos": "Computadores, telefone, veículos, materiais de apoio, equipamentos operacionais e instrumentos de higienização", "fatores": ["Atendimento ao público", "Atenção contínua", "Comunicação", "Organização de demandas", "Carga emocional"], "medidas": ["Melhoria de comunicação", "Pausas breves", "Organização do posto", "Acompanhamento psicossocial", "Orientação NR-17"], "prioridade": "Média", "prazo": "30 dias", "responsavel": "Empresa / Administração / SST"},
     },
 ]
 
@@ -2009,17 +2022,48 @@ def _wrap_pdf_text(page, text: str, max_width: float, fontname: str, fontsize: f
     return lines or [""]
 
 
-def _draw_centered_cell(page, rect, text: str, fontname: str, fontsize: float, color=(0, 0, 0)) -> None:  # noqa: ANN001
-    lines = _wrap_pdf_text(page, text, rect.width - 8, fontname, fontsize)
+def _draw_centered_cell(page, rect, text: str, fontname: str, fontsize: float, color=(0, 0, 0), fontfile: str | None = None, measure_fontname: str | None = None) -> None:  # noqa: ANN001
+    measure_fontname = measure_fontname or ("helv" if fontfile else fontname)
+    lines = _wrap_pdf_text(page, text, rect.width - 8, measure_fontname, fontsize)
     line_height = fontsize * 1.18
     total_height = line_height * len(lines)
     y = rect.y0 + max(3, (rect.height - total_height) / 2)
     for line in lines:
         import fitz
-        text_width = fitz.get_text_length(line, fontname=fontname, fontsize=fontsize)
+        text_width = fitz.get_text_length(line, fontname=measure_fontname, fontsize=fontsize)
         x = rect.x0 + max(3, (rect.width - text_width) / 2)
-        page.insert_text((x, y + fontsize), line, fontname=fontname, fontsize=fontsize, color=color)
+        page.insert_text((x, y + fontsize), line, fontname=fontname, fontfile=fontfile, fontsize=fontsize, color=color)
         y += line_height
+
+
+def _receipt_pdf_font_config() -> dict[str, str | None]:
+    regular_candidates = [
+        "/usr/share/fonts/opentype/urw-base35/NimbusSansNarrow-Regular.otf",
+        "/usr/share/fonts/X11/Type1/NimbusSansNarrow-Regular.pfb",
+    ]
+    bold_candidates = [
+        "/usr/share/fonts/opentype/urw-base35/NimbusSansNarrow-Bold.otf",
+        "/usr/share/fonts/X11/Type1/NimbusSansNarrow-Bold.pfb",
+    ]
+    regular = next((path for path in regular_candidates if Path(path).exists()), None)
+    bold = next((path for path in bold_candidates if Path(path).exists()), None)
+    if regular:
+        return {
+            "body_name": "ReceiptNarrow",
+            "body_file": regular,
+            "header_name": "ReceiptNarrowBold" if bold else "ReceiptNarrow",
+            "header_file": bold or regular,
+            "measure_body": "helv",
+            "measure_header": "hebo",
+        }
+    return {
+        "body_name": "helv",
+        "body_file": None,
+        "header_name": "hebo",
+        "header_file": None,
+        "measure_body": "helv",
+        "measure_header": "hebo",
+    }
 
 
 def _build_receipts_pdf(rows: list[dict[str, str]], output_path: Path) -> Path:
@@ -2037,6 +2081,7 @@ def _build_receipts_pdf(rows: list[dict[str, str]], output_path: Path) -> Path:
     header_height = 38
     body_font = 11
     header_font = 12
+    fonts = _receipt_pdf_font_config()
     doc = fitz.open()
 
     def new_page():
@@ -2046,7 +2091,7 @@ def _build_receipts_pdf(rows: list[dict[str, str]], output_path: Path) -> Path:
         for idx, (_key, label) in enumerate(RECEIPT_PDF_COLUMNS):
             rect = fitz.Rect(x, y, x + widths[idx], y + header_height)
             page.draw_rect(rect, color=(0, 0, 0), fill=(0.36, 0.36, 0.36), width=0.9)
-            _draw_centered_cell(page, rect, label, "hebo", header_font, color=(1, 1, 1))
+            _draw_centered_cell(page, rect, label, fonts["header_name"], header_font, color=(1, 1, 1), fontfile=fonts["header_file"], measure_fontname=fonts["measure_header"])
             x += widths[idx]
         return page, margin_top + header_height
 
@@ -2062,7 +2107,7 @@ def _build_receipts_pdf(rows: list[dict[str, str]], output_path: Path) -> Path:
         for idx, (key, _label) in enumerate(RECEIPT_PDF_COLUMNS):
             rect = fitz.Rect(x, y, x + widths[idx], y + row_height)
             page.draw_rect(rect, color=(0, 0, 0), width=0.9)
-            _draw_centered_cell(page, rect, item.get(key, ""), "helv", body_font, color=(0, 0, 0))
+            _draw_centered_cell(page, rect, item.get(key, ""), fonts["body_name"], body_font, color=(0, 0, 0), fontfile=fonts["body_file"], measure_fontname=fonts["measure_body"])
             x += widths[idx]
         y += row_height
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2995,7 +3040,7 @@ def _prepare_link_docx(template_path: Path, output_path: Path, empresa: str, dat
             for run in paragraph.runs:
                 run.text = run.text.replace("DE 2026", f"DE {ano}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -3106,7 +3151,7 @@ def _append_pdf_as_images_to_docx(base_docx: Path, pdf_path: Path, output_docx: 
     with tempfile.TemporaryDirectory() as img_tmp:
         images_dir = Path(img_tmp) / "psicossocial_paginas"
         _render_pdf_pages_to_docx_body(doc, pdf_path, images_dir)
-        doc.save(str(output_docx))
+        save_docx_with_default_font(doc, output_docx)
     return output_docx
 
 
@@ -3187,7 +3232,7 @@ def _convert_pdf_to_docx(pdf_path: Path, output_docx: Path) -> Path:
     finally:
         pdf.close()
 
-    doc.save(str(output_docx))
+    save_docx_with_default_font(doc, output_docx)
     return output_docx
 
 
@@ -3208,6 +3253,9 @@ def _merge_docx_files(paths: list[Path], output_path: Path) -> Path:
         composer.append(Document(str(path)))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     composer.save(str(output_path))
+    merged = Document(str(output_path))
+    apply_default_docx_font(merged)
+    save_docx_with_default_font(merged, output_path)
     return output_path
 
 

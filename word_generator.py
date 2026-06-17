@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 import re
+import unicodedata
 from typing import Any, Iterable, Mapping
 
 from docx import Document
@@ -24,6 +25,8 @@ TEMPLATE_PGR_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_pgr_completo.docx"
 TEMPLATE_PCMSO_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_pcmso_completo.docx"
 TEMPLATE_RISCOS_PCMSO_PATH = BASE_DIR / "modelos" / "modelo_riscos_pcmso.docx"
 TEMPLATE_LTCAT_COMPLETO_PATH = BASE_DIR / "modelos" / "modelo_ltcat_completo.docx"
+TEMPLATE_AET_BASE_PATH = BASE_DIR / "modelos" / "modelo_aet_base.docx"
+DEFAULT_DOCX_FONT = "Arial Narrow"
 
 TIPO_RISCO_COLORS = {
     "ACIDENTE(MECÂNICO)": "0066FF",
@@ -56,6 +59,129 @@ NIVEL_RISCO_COLORS = {
     "MUITO ALTO": "FF0000",
 }
 
+AET_ACTIVITY_PROFILES: list[dict[str, Any]] = [
+    {
+        "label": "Serviços funerários",
+        "keywords": ["96.03", "9603", "funer", "somatoconservacao", "somatoconservação", "assistencia postuma", "assistência póstuma"],
+        "contexto": "atividade de serviços funerários, com rotinas administrativas, atendimento a familiares, apoio operacional, higienização, transporte e organização de serviços, exigindo controle técnico, postura profissional e equilíbrio emocional diante de situações sensíveis.",
+        "demanda": "aprofundar a avaliação das exigências físicas, cognitivas, organizacionais e psicossociais associadas ao atendimento humanizado, à exposição a situações de luto, à organização de demandas variáveis e ao suporte operacional.",
+        "tarefas": "atendimento e orientação de clientes/familiares, organização documental, transporte, apoio operacional, preparação de ambientes, higienização e suporte às rotinas internas da empresa.",
+        "exigencias": "exigência emocional elevada, atenção contínua, comunicação cuidadosa, controle de prazos, deslocamentos, alternância postural e necessidade de tomada de decisão compatível com a sensibilidade dos serviços prestados.",
+        "favoraveis": "estrutura formal definida, possibilidade de padronização dos atendimentos, divisão de funções por setor e integração das ações de saúde ocupacional ao PGR.",
+        "recomendacoes": "padronizar fluxos de atendimento, orientar lideranças e equipes sobre comunicação, pausas, suporte emocional, organização das demandas e prevenção de conflitos.",
+    },
+    {
+        "label": "Comércio varejista e atendimento",
+        "keywords": ["47.", "comercio", "comércio", "varejista", "loja", "vestuario", "vestuário", "mercado", "supermercado", "atacado", "atacarejo"],
+        "contexto": "atividade comercial com atendimento ao público, organização de mercadorias, operação de caixa, reposição, estoque e suporte administrativo, sujeita a variações de fluxo, metas e demandas de clientes.",
+        "demanda": "avaliar as condições ergonômicas relacionadas à postura em pé, deslocamentos, repetitividade, atendimento ao público, organização de mercadorias e pressão por produtividade.",
+        "tarefas": "vendas, atendimento, operação de caixa, reposição, organização de prateleiras, controle de estoque, conferência de mercadorias e apoio administrativo.",
+        "exigencias": "permanência em pé, deslocamentos frequentes, atenção ao cliente, controle de prioridades, manuseio eventual de cargas e comunicação constante com equipe e consumidores.",
+        "favoraveis": "atividades com rotinas conhecidas, possibilidade de rodízio, padronização de tarefas e implantação de pausas e orientações ergonômicas.",
+        "recomendacoes": "promover alternância postural, pausas breves, organização do posto, rodízio de tarefas quando aplicável e orientação de NR-17 para trabalhadores e liderança.",
+    },
+    {
+        "label": "Administrativo e escritório",
+        "keywords": ["82.", "69.", "70.", "administrativo", "escritorio", "escritório", "advocacia", "contabilidade", "consultoria"],
+        "contexto": "atividade predominantemente administrativa, com uso de computador, atendimento interno/externo, organização documental, controle de informações e cumprimento de prazos.",
+        "demanda": "avaliar postos informatizados, postura sentada, movimentos repetitivos, carga cognitiva, organização de prioridades, comunicação e autonomia na execução das atividades.",
+        "tarefas": "digitação, registros em sistema, atendimento, análise de documentos, controle de planilhas, arquivamento, comunicação interna e suporte à gestão.",
+        "exigencias": "atenção contínua, permanência sentada, uso de tela, teclado e mouse, prazos, controle de informações e comunicação com diferentes áreas.",
+        "favoraveis": "ambiente controlado, baixo esforço físico predominante e maior facilidade para ajustes de mobiliário, pausas e organização do trabalho.",
+        "recomendacoes": "adequar cadeira, mesa e monitor, instituir pausas visuais, alternância postural, organização de demandas e orientação ergonômica.",
+    },
+    {
+        "label": "Limpeza, conservação e serviços gerais",
+        "keywords": ["81.21", "81.22", "81.29", "limpeza", "conservacao", "conservação", "servicos gerais", "serviços gerais"],
+        "contexto": "atividade de limpeza e conservação, com deslocamentos, uso de ferramentas manuais, manuseio de materiais e execução de rotinas em diferentes ambientes.",
+        "demanda": "avaliar posturas incômodas, esforço físico, deslocamentos, ritmo de trabalho, organização das rotinas e condições de ferramentas/equipamentos.",
+        "tarefas": "limpeza, higienização, conservação de ambientes, recolhimento de resíduos, organização de materiais e apoio às áreas comuns.",
+        "exigencias": "postura em pé, flexão de tronco, agachamentos eventuais, deslocamento frequente, uso de força moderada e atenção às condições do piso e circulação.",
+        "favoraveis": "possibilidade de padronização da rotina, uso de ferramentas adequadas e implantação de pausas e alternância de tarefas.",
+        "recomendacoes": "adequar ferramentas, organizar carrinhos/materiais, orientar sobre postura, pausas, alternância de tarefas e comunicação com a liderança.",
+    },
+    {
+        "label": "Condomínio, portaria e serviços prediais",
+        "keywords": ["81.12", "8112", "condominio", "condomínio", "portaria", "porteiro", "zelador", "predial"],
+        "contexto": "atividade predial com controle de acesso, atendimento a moradores/visitantes, monitoramento, limpeza, manutenção e suporte administrativo.",
+        "demanda": "avaliar atenção contínua, postura sentada/em pé, comunicação, controle de conflitos, organização das escalas e condições dos postos de trabalho.",
+        "tarefas": "controle de entrada e saída, atendimento, monitoramento, limpeza, conservação, pequenos apoios operacionais e comunicação com administração.",
+        "exigencias": "atenção permanente, comunicação com público, permanência em posto, alternância postural, rotina por escala e resposta a demandas variáveis.",
+        "favoraveis": "tarefas passíveis de padronização, definição de procedimentos e ajustes pontuais de posto.",
+        "recomendacoes": "adequar posto de portaria, orientar comunicação, definir procedimentos, garantir pausas conforme escala e acompanhar riscos psicossociais.",
+    },
+    {
+        "label": "Alimentação, restaurante e cozinha",
+        "keywords": ["56.", "alimentacao", "alimentação", "restaurante", "lanchonete", "cozinha", "refeicao", "refeição"],
+        "contexto": "atividade de preparo, atendimento e serviço de alimentação, com fluxo variável, permanência em pé, calor, manipulação de utensílios e organização de pedidos.",
+        "demanda": "avaliar postura em pé, repetitividade, calor, ritmo de produção, organização do posto, manuseio de materiais e atendimento ao público.",
+        "tarefas": "preparo de alimentos, montagem, atendimento, caixa, higienização, armazenamento e organização de utensílios e insumos.",
+        "exigencias": "permanência em pé, deslocamentos, atenção ao preparo, ritmo por demanda, uso de utensílios, calor e organização de prioridades.",
+        "favoraveis": "rotinas operacionais definidas, possibilidade de organização de bancadas, pausas e alternância de atividades.",
+        "recomendacoes": "adequar bancadas, melhorar organização do fluxo, orientar postura, pausas, hidratação e alternância de tarefas.",
+    },
+    {
+        "label": "Saúde, clínica, consultório e laboratório",
+        "keywords": ["86.", "clinica", "clínica", "consultorio", "consultório", "laboratorio", "laboratório", "saude", "saúde"],
+        "contexto": "atividade de saúde com atendimento a pacientes, recepção, apoio técnico, procedimentos, registros e organização de documentos e exames.",
+        "demanda": "avaliar exigências cognitivas, atendimento ao público, postura, movimentos repetitivos, organização de agendas, comunicação e possível exposição emocional.",
+        "tarefas": "recepção, cadastro, atendimento, apoio a procedimentos, coleta/exames, limpeza, registros em sistema e organização documental.",
+        "exigencias": "atenção contínua, comunicação clara, permanência sentada/em pé, precisão nos registros, controle de agenda e interação frequente com pacientes.",
+        "favoraveis": "ambientes com rotinas técnicas definidas e possibilidade de padronização de fluxos, mobiliário e pausas.",
+        "recomendacoes": "adequar mobiliário, organizar fluxo de atendimento, promover pausas, comunicação clara e orientação ergonômica.",
+    },
+    {
+        "label": "Oficina, manutenção e serviços técnicos",
+        "keywords": ["45.20", "4520", "33.", "oficina", "mecanica", "mecânica", "manutencao", "manutenção", "refrigeracao", "refrigeração"],
+        "contexto": "atividade técnica de manutenção, inspeção, reparo e organização de peças/equipamentos, com uso de ferramentas e posturas variadas.",
+        "demanda": "avaliar posturas incômodas, esforço físico, ferramentas, levantamento de cargas, atenção técnica, organização do posto e pausas.",
+        "tarefas": "inspeção, manutenção, reparo, montagem/desmontagem, uso de ferramentas, organização de peças e apoio administrativo.",
+        "exigencias": "posturas em flexão, agachamento eventual, permanência em pé, atenção técnica, manuseio de ferramentas e demandas por ordem de serviço.",
+        "favoraveis": "possibilidade de organização de bancadas, ferramentas adequadas e padronização de procedimentos.",
+        "recomendacoes": "organizar ferramentas, ajustar bancadas, orientar postura, alternância de tarefas, pausas e uso de meios auxiliares.",
+    },
+    {
+        "label": "Construção civil e obras",
+        "keywords": ["41.", "42.", "43.", "construcao", "construção", "obra", "edificacao", "edificação", "engenharia"],
+        "contexto": "atividade de obra e apoio operacional, com exigência física relevante, deslocamentos, frentes de trabalho, ferramentas e variação ambiental.",
+        "demanda": "avaliar esforço físico, posturas incômodas, levantamento de cargas, ritmo de produção, organização das frentes de serviço e áreas de descanso.",
+        "tarefas": "execução de serviços de obra, apoio operacional, transporte de materiais, organização de ferramentas, almoxarifado e acompanhamento técnico.",
+        "exigencias": "elevada exigência física, atenção à segurança, deslocamentos, manuseio de materiais, calor/ruído/poeira e coordenação de equipes.",
+        "favoraveis": "possibilidade de planejamento de frentes, pausas, rodízios e uso de equipamentos auxiliares.",
+        "recomendacoes": "planejar tarefas, usar meios auxiliares, orientar levantamento de cargas, pausas, hidratação e organização do canteiro.",
+    },
+    {
+        "label": "Transporte, logística e táxi",
+        "keywords": ["49.", "52.", "transporte", "logistica", "logística", "taxi", "táxi", "motorista", "garagem", "deposito", "depósito", "entrega"],
+        "contexto": "atividade de transporte, deslocamento, logística ou armazenagem, com condução, atenção contínua, prazos, movimentação e comunicação operacional.",
+        "demanda": "avaliar postura sentada prolongada, atenção, fadiga, vibração, ritmo de rotas, movimentação de materiais e organização das pausas.",
+        "tarefas": "condução de veículos, atendimento/entrega, carga e descarga, conferência, expedição, organização de depósito e suporte administrativo.",
+        "exigencias": "atenção contínua, postura sentada ou em pé, deslocamentos, prazos, interação com trânsito/clientes e possível manuseio de cargas.",
+        "favoraveis": "rotas e processos passíveis de planejamento, pausas e orientações de ergonomia e direção segura.",
+        "recomendacoes": "organizar pausas, orientar postura ao dirigir, controlar fadiga, planejar rotas e melhorar comunicação operacional.",
+    },
+    {
+        "label": "Educação e ensino",
+        "keywords": ["85.", "educacao", "educação", "escola", "ensino", "professor", "creche", "curso"],
+        "contexto": "atividade educacional com interação contínua, planejamento pedagógico, comunicação, permanência em pé/sentado e exigência cognitiva.",
+        "demanda": "avaliar carga cognitiva, comunicação, organização de aulas, postura, voz, demandas emocionais e apoio às rotinas escolares.",
+        "tarefas": "aulas, atendimento a alunos/responsáveis, planejamento, registros, coordenação, limpeza e apoio escolar.",
+        "exigencias": "atenção contínua, comunicação verbal, controle de turma, prazos, postura alternada e interação social intensa.",
+        "favoraveis": "rotinas definidas por calendário e possibilidade de planejamento, pausas e organização do posto.",
+        "recomendacoes": "organizar pausas, alternância postural, suporte à comunicação, planejamento de demandas e acompanhamento psicossocial quando aplicável.",
+    },
+    {
+        "label": "Agropecuária e atividade rural",
+        "keywords": ["01.", "agro", "agricultura", "pecuaria", "pecuária", "rural", "fazenda", "plantio"],
+        "contexto": "atividade rural ou agropecuária com tarefas operacionais, deslocamentos, variação climática, manuseio de materiais/equipamentos e organização de rotinas de campo.",
+        "demanda": "avaliar esforço físico, posturas incômodas, jornada, calor, ferramentas, deslocamentos e organização das frentes de trabalho.",
+        "tarefas": "manejo, plantio, apoio operacional, manutenção, organização de insumos, atividades administrativas e controle de produção.",
+        "exigencias": "esforço físico, deslocamentos, variação ambiental, atenção a equipamentos, manuseio de cargas e demandas sazonais.",
+        "favoraveis": "possibilidade de planejamento de tarefas, pausas, ferramentas adequadas e capacitação operacional.",
+        "recomendacoes": "planejar tarefas, orientar postura, pausas, hidratação, ferramentas adequadas e rodízio quando aplicável.",
+    },
+]
+
 
 # ---------------------------------------------------------------------------
 # Utilitários gerais de OOXML
@@ -63,6 +189,72 @@ NIVEL_RISCO_COLORS = {
 
 def _normalize_option(value: Any) -> str:
     return str(value or "").strip().upper()
+
+
+def _set_run_properties_font(run_properties, font_name: str = DEFAULT_DOCX_FONT, size_pt: float | None = None) -> None:
+    """Força a fonte no OOXML, inclusive em textos inseridos diretamente nas tabelas."""
+    if run_properties is None:
+        return
+    r_fonts = run_properties.find(qn("w:rFonts"))
+    if r_fonts is None:
+        r_fonts = OxmlElement("w:rFonts")
+        run_properties.insert(0, r_fonts)
+    for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
+        r_fonts.set(qn(f"w:{attr}"), font_name)
+    if size_pt is not None:
+        size_val = str(int(float(size_pt) * 2))
+        for tag in ("w:sz", "w:szCs"):
+            size_el = run_properties.find(qn(tag))
+            if size_el is None:
+                size_el = OxmlElement(tag)
+                run_properties.append(size_el)
+            size_el.set(qn("w:val"), size_val)
+
+
+def _apply_run_font(run, font_name: str = DEFAULT_DOCX_FONT) -> None:
+    """Aplica a fonte padrão preservando tamanho, negrito, cor e demais estilos."""
+    try:
+        run.font.name = font_name
+        r_pr = run._element.get_or_add_rPr()
+        _set_run_properties_font(r_pr, font_name)
+    except Exception:
+        pass
+
+
+def _apply_part_font(part, font_name: str = DEFAULT_DOCX_FONT) -> None:
+    for paragraph in getattr(part, "paragraphs", []) or []:
+        for run in paragraph.runs:
+            _apply_run_font(run, font_name)
+    for table in getattr(part, "tables", []) or []:
+        for row in table.rows:
+            for cell in row.cells:
+                _apply_part_font(cell, font_name)
+
+
+def apply_default_docx_font(doc: Document, font_name: str = DEFAULT_DOCX_FONT) -> Document:
+    """Padroniza todos os textos editáveis do DOCX gerado em Arial Narrow."""
+    for style in doc.styles:
+        try:
+            style.font.name = font_name
+        except Exception:
+            pass
+    _apply_part_font(doc, font_name)
+    for section in doc.sections:
+        for part in (
+            section.header,
+            section.footer,
+            section.first_page_header,
+            section.first_page_footer,
+            section.even_page_header,
+            section.even_page_footer,
+        ):
+            _apply_part_font(part, font_name)
+    return doc
+
+
+def save_docx_with_default_font(doc: Document, output_path: str | Path, font_name: str = DEFAULT_DOCX_FONT) -> None:
+    apply_default_docx_font(doc, font_name)
+    doc.save(str(output_path))
 
 
 def _clean_cargo_and_cbo(raw_cargo: Any, raw_cbo: Any = "") -> tuple[str, str]:
@@ -128,6 +320,7 @@ def _set_cell_text(cell_xml, value: Any, font_color: str | None = "000000") -> N
 
     if run_properties is None:
         run_properties = OxmlElement("w:rPr")
+    _set_run_properties_font(run_properties)
     _set_font_color(run_properties, font_color)
 
     for child in list(cell_xml):
@@ -493,7 +686,7 @@ def generate_action_plan_docx(groups_or_risks: Iterable[Mapping[str, Any]], outp
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -647,7 +840,7 @@ def generate_pgr_docx(groups_or_risks: Iterable[Mapping[str, Any]], output_path:
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -708,7 +901,7 @@ def generate_pcmso_docx(groups_or_risks: Iterable[Mapping[str, Any]], output_pat
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -785,7 +978,7 @@ def generate_relacao_funcao_atividade_docx(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -823,7 +1016,7 @@ def generate_descritivo_setor_docx(sectors: Iterable[Mapping[str, Any]], output_
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -1254,7 +1447,7 @@ def generate_complete_pgr_docx(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -1401,7 +1594,7 @@ def generate_riscos_pcmso_docx(groups: Iterable[Mapping[str, Any]], output_path:
         _insert_before_section_or_end(body, element)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -1464,7 +1657,7 @@ def generate_complete_pcmso_docx(
     _replace_doc_placeholders(doc, _company_replacements(company))
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -1897,7 +2090,7 @@ def generate_complete_ltcat_docx(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 # ---------------------------------------------------------------------------
@@ -2064,7 +2257,7 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
 
 
@@ -2154,6 +2347,142 @@ def _aet_priority_from_risks(risks: list[Mapping[str, Any]], manual: str = "") -
     return "Baixa"
 
 
+def _aet_norm(value: Any) -> str:
+    text = unicodedata.normalize("NFD", str(value or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _aet_company_profile(company_doc: Mapping[str, Any]) -> dict[str, Any]:
+    haystack = _aet_norm(" ".join([
+        str(company_doc.get("empresa", "")),
+        str(company_doc.get("cnae", "")),
+        str(company_doc.get("cnae_secundario", "")),
+        str(company_doc.get("descricao_atividade", "")),
+        str(company_doc.get("descricao_atividade_secundaria", "")),
+    ]))
+    for profile in AET_ACTIVITY_PROFILES:
+        if any(_aet_norm(keyword) in haystack for keyword in profile.get("keywords", [])):
+            return profile
+    return {
+        "label": "Modelo geral por atividade econômica",
+        "contexto": "atividade econômica informada no cadastro da empresa, com rotinas administrativas, operacionais e/ou de atendimento conforme setores e cargos cadastrados no sistema.",
+        "demanda": "avaliar as condições de trabalho, considerando as características reais dos setores, cargos, riscos ergonômicos, riscos psicossociais e informações complementares preenchidas na geração.",
+        "tarefas": "execução das atividades descritas nos cargos cadastrados, observando a divisão setorial, a organização do trabalho e as exigências específicas de cada função.",
+        "exigencias": "exigências físicas, cognitivas, organizacionais e psicossociais compatíveis com os setores e riscos selecionados.",
+        "favoraveis": "existência de cadastro setorial, relação função x atividade e integração com os dados do PGR, PCMSO e LTCAT.",
+        "recomendacoes": "manter avaliação periódica, orientar trabalhadores, acompanhar queixas e implantar as medidas preventivas/corretivas registradas nesta AET.",
+    }
+
+
+def _aet_default_sector_data(profile: Mapping[str, Any], risks: list[Mapping[str, Any]]) -> dict[str, Any]:
+    label = _aet_norm(profile.get("label"))
+    risk_names = _aet_norm(" ".join(str(r.get("risco", "")) for r in risks))
+
+    if any(term in label for term in ("construcao", "agropecuaria")):
+        postura = ["Em pé", "Deslocamento frequente", "Inclinação/flexão de tronco", "Agachamento eventual"]
+        exig_fisica = "Elevada"
+        carga = "Habitual"
+    elif any(term in label for term in ("administrativo", "escritorio")):
+        postura = ["Sentado", "Alternado"]
+        exig_fisica = "Baixa"
+        carga = "Não habitual"
+    elif any(term in label for term in ("transporte", "taxi")):
+        postura = ["Sentado", "Alternado"]
+        exig_fisica = "Moderada"
+        carga = "Eventual"
+    else:
+        postura = ["Em pé", "Sentado", "Alternado"]
+        exig_fisica = "Moderada"
+        carga = "Eventual"
+
+    if any(term in label for term in ("funer", "educacao", "saude", "condominio", "transporte")):
+        exig_cognitiva = "Elevada"
+    else:
+        exig_cognitiva = "Moderada"
+
+    atendimento = "Frequente" if any(term in label for term in ("comercio", "funer", "saude", "educacao", "condominio", "alimentacao", "taxi")) else "Eventual"
+    repetitividade = "Moderada frequência" if any(term in risk_names for term in ("repet", "digit", "caixa", "postura")) else "Baixa frequência"
+    prioridade = _aet_priority_from_risks(risks)
+
+    return {
+        "postura_predominante": postura,
+        "tipo_atividade": profile.get("tarefas") or "Atividades compatíveis com os cargos cadastrados",
+        "exigencia_fisica": exig_fisica,
+        "exigencia_cognitiva": exig_cognitiva,
+        "levantamento_cargas": carga,
+        "movimentos_repetitivos": repetitividade,
+        "atencao_concentracao": exig_cognitiva,
+        "atendimento_publico": atendimento,
+        "autonomia": "Adequada" if prioridade == "Baixa" else "Parcialmente limitada",
+        "metas_prioridades": "Demandas variáveis" if prioridade != "Baixa" else "Compatíveis",
+        "comunicacao": "Necessita melhoria" if any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for r in risks) else "Adequada",
+        "ritmo_trabalho": "Por demanda da atividade, fluxo operacional e prioridades do setor",
+        "pausas": "Pausas conforme escala, intensidade da atividade e necessidade de recuperação física/mental",
+        "mobiliario": "A avaliar/manter adequado à atividade, considerando assentos, bancadas, mesas, equipamentos e alcances",
+        "ambiente": "A avaliar iluminação, ventilação, conforto térmico, ruído, circulação e organização do espaço",
+        "organizacao": profile.get("demanda") or "Rotina organizada conforme demandas do setor e comunicação com a liderança",
+        "equipamentos": "Equipamentos, ferramentas e materiais compatíveis com as atividades cadastradas",
+        "fatores_organizacionais": ["Organização de demandas", "Comunicação", "Atenção contínua"],
+        "medidas_recomendadas": ["Orientação NR-17", "Pausas breves", "Organização do posto", "Melhoria de comunicação"],
+        "prioridade": prioridade,
+        "prazo": "30 dias" if prioridade in {"Alta", "Média"} else "60 dias",
+        "responsavel": "Empresa / Administração / SST",
+    }
+
+
+def _aet_merge_sector_data(defaults: Mapping[str, Any], manual: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(defaults)
+    for key, value in (manual or {}).items():
+        if isinstance(value, (list, tuple)):
+            cleaned = [str(v).strip() for v in value if str(v).strip()]
+            if cleaned:
+                merged[key] = cleaned
+        elif str(value or "").strip():
+            merged[key] = value
+    return merged
+
+
+def _aet_sector_names(groups: list[Mapping[str, Any]]) -> str:
+    names = []
+    for group in groups:
+        name = str((group.get("sector") or {}).get("setor", "")).strip()
+        if name and name not in names:
+            names.append(name)
+    return ", ".join(names) if names else "setores selecionados"
+
+
+def _aet_selected_risk_names(risks: list[Mapping[str, Any]], fallback: str = "riscos ergonômicos selecionados") -> str:
+    names = []
+    for risk in risks:
+        name = str(risk.get("risco", "") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return fallback
+    if len(names) <= 6:
+        return ", ".join(names)
+    return ", ".join(names[:6]) + f", entre outros {len(names) - 6} fator(es)"
+
+
+def _aet_critical_sector_text(groups: list[Mapping[str, Any]]) -> str:
+    critical = []
+    psychosocial = []
+    for group in groups:
+        sector_name = str((group.get("sector") or {}).get("setor", "") or "").strip()
+        risks = group.get("risks", []) or []
+        if any(_normalize_option(r.get("grau_nivel_risco")) in {"ALTO", "MUITO ALTO"} for r in risks):
+            critical.append(sector_name)
+        if any(_normalize_option(r.get("tipo_risco")) == "ERGONÔMICO PSICOSSOCIAL" for r in risks):
+            psychosocial.append(sector_name)
+    parts = []
+    if critical:
+        parts.append("setores com maior prioridade técnica: " + ", ".join(dict.fromkeys([s for s in critical if s])))
+    if psychosocial:
+        parts.append("setores com fatores psicossociais selecionados: " + ", ".join(dict.fromkeys([s for s in psychosocial if s])))
+    return "; ".join(parts) if parts else "não foram indicados setores com criticidade elevada no momento da geração"
+
+
 def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empresa: str = "", cnpj: str = "", data_atual: str = "", data_final: str = "", company: Mapping[str, Any] | None = None) -> Path:
     """Gera AET completa com formulário detalhado, dados de PGR/PCMSO/LTCAT e padrão visual da clínica.
 
@@ -2169,11 +2498,17 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
         raise ValueError("Selecione pelo menos um setor para gerar a AET.")
     company = company or {}
     company_doc = _company_dict_for_docs(empresa, cnpj, data_atual, data_final, company)
+    activity_profile = _aet_company_profile(company_doc)
     aet_data = company.get("aet") or {}
     general = aet_data.get("general", {}) if isinstance(aet_data, Mapping) else {}
     by_sector = aet_data.get("by_sector", {}) if isinstance(aet_data, Mapping) else {}
 
-    doc = Document(str(TEMPLATE_PGR_COMPLETO_PATH)) if TEMPLATE_PGR_COMPLETO_PATH.exists() else Document()
+    if TEMPLATE_AET_BASE_PATH.exists():
+        doc = Document(str(TEMPLATE_AET_BASE_PATH))
+    elif TEMPLATE_PGR_COMPLETO_PATH.exists():
+        doc = Document(str(TEMPLATE_PGR_COMPLETO_PATH))
+    else:
+        doc = Document()
     _clear_document_body_keep_section(doc)
     _replace_doc_placeholders(doc, _company_replacements(company_doc))
 
@@ -2352,16 +2687,35 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
     responsavel = str(general.get("responsavel_tecnico", "") or "Responsável técnico a definir pela clínica").strip()
     add_text(f"O presente documento foi elaborado com base nas informações fornecidas pela empresa, nos setores e cargos cadastrados, nos riscos ergonômicos e psicossociais selecionados no sistema e nos dados complementares preenchidos no formulário de AET. Responsável técnico: {responsavel}.")
 
+    add_heading("INTRODUÇÃO")
+    total_func = company_doc.get("funcionarios") or _total_funcionarios_from_sectors(sectors)
+    add_text(
+        f"A presente Análise Ergonômica do Trabalho foi desenvolvida com o objetivo de avaliar as condições reais de trabalho da empresa "
+        f"{company_doc.get('empresa')}, considerando os aspectos físicos, cognitivos, organizacionais e psicossociais previstos na NR-17 e integrados ao gerenciamento de riscos da NR-01. "
+        f"A empresa atua em {activity_profile.get('contexto')} O quadro analisado contempla {total_func or 'os'} trabalhador(es) distribuídos nos setores: {_aet_sector_names(groups)}."
+    )
+    add_text(
+        "A elaboração da AET considera os dados específicos obtidos no processo de geração dos laudos, incluindo identificação da empresa, CNAE, relação função x atividade, "
+        "riscos selecionados por setor, fontes/circunstâncias, possíveis agravos à saúde, ações preventivas/corretivas e informações preenchidas no formulário ergonômico."
+    )
+
     add_heading("CARACTERIZAÇÃO DO DOCUMENTO")
     add_kv_table([
         ("Tipo de documento", general.get("tipo_documento") or general.get("tipo_aet") or "AET - Análise Ergonômica do Trabalho"),
-        ("Motivo da análise", general.get("motivo_analise") or "Atendimento à NR-17 e integração com o PGR"),
+        ("Modelo técnico aplicado", activity_profile.get("label")),
+        ("Motivo da análise", general.get("motivo_analise") or activity_profile.get("demanda") or "Atendimento à NR-17 e integração com o PGR"),
         ("Condição ergonômica geral", general.get("condicao_ergonomica_geral") or "Adequada com recomendações"),
     ])
 
     add_heading("OBJETIVO")
     objetivo_extra = str(general.get("objetivo_complementar", "") or "").strip()
     add_text("A presente Análise Ergonômica do Trabalho tem por objetivo avaliar as condições de trabalho, considerando aspectos relacionados à organização do trabalho, exigências físicas, cognitivas, biomecânicas, ambientais e psicossociais, visando propor medidas de adequação, prevenção e melhoria das condições laborais, conforme diretrizes da NR-17." + (f" {objetivo_extra}" if objetivo_extra else ""))
+
+    add_heading("OBJETIVOS ESPECÍFICOS")
+    add_text(
+        "Identificar e caracterizar os fatores ergonômicos presentes nos setores avaliados; verificar a compatibilidade entre as atividades realizadas, os postos de trabalho e a organização do trabalho; "
+        "analisar riscos ergonômicos e psicossociais registrados no PGR; propor medidas preventivas e corretivas; e subsidiar o plano de ação da empresa com recomendações objetivas, responsáveis, prazos e indicadores de acompanhamento."
+    )
 
     add_heading("METODOLOGIA")
     metodologias = general.get("metodologia") or []
@@ -2376,6 +2730,32 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
     limitacoes = str(general.get("limitacoes_analise", "") or "").strip()
     add_heading("LIMITAÇÕES DA ANÁLISE")
     add_text(limitacoes or "A análise foi realizada com base nas informações fornecidas pela empresa, documentos disponíveis, setores/cargos cadastrados e fatores de risco identificados no momento da elaboração. Recomenda-se atualização sempre que houver alteração relevante nas atividades, layout, organização do trabalho, jornada, mobiliário, equipamentos ou surgimento de novas queixas.")
+
+    add_heading("ANÁLISE DA DEMANDA")
+    add_text(
+        f"A demanda para realização da AET está relacionada à necessidade de avaliar tecnicamente as condições ergonômicas da empresa considerando seu CNAE, sua atividade econômica e os setores efetivamente selecionados. "
+        f"Para este perfil, a análise busca {str(activity_profile.get('demanda') or '').rstrip('.')}."
+    )
+    add_text(
+        f"A leitura setorial indica {_aet_critical_sector_text(groups)}. Essa abordagem permite tratar a ergonomia de forma direcionada, evitando conclusões genéricas e aproximando o documento da realidade operacional da empresa."
+    )
+
+    add_heading("ANÁLISE DA TAREFA")
+    add_heading("5.1 FUNÇÕES E DESCRIÇÃO DAS ATIVIDADES", 2)
+    add_text(
+        f"As funções avaliadas estão distribuídas nos setores {_aet_sector_names(groups)}. De forma geral, as atividades envolvem {activity_profile.get('tarefas')} "
+        "A relação função x atividade apresentada a seguir detalha os cargos, CBOs, número de trabalhadores e descrições cadastradas no sistema."
+    )
+    add_heading("5.2 TAREFAS PRESCRITAS", 2)
+    add_text(
+        "As tarefas prescritas correspondem às atividades formais esperadas para cada setor/cargo, conforme cadastro realizado no sistema e informações documentais disponíveis. "
+        f"No perfil analisado, predominam tarefas relacionadas a {activity_profile.get('tarefas')}"
+    )
+    add_heading("5.3 EXIGÊNCIAS DA TAREFA", 2)
+    add_text(
+        f"As exigências da tarefa abrangem {activity_profile.get('exigencias')} Além disso, são considerados os fatores de risco ergonômico selecionados: "
+        f"{_aet_selected_risk_names(all_erg_risks)}."
+    )
 
     doc.add_page_break()
     add_heading("RELAÇÃO FUNÇÃO X ATIVIDADE")
@@ -2402,14 +2782,70 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
             row[4].text = str(cargo.get("descricao", ""))
     set_table_font(rel)
 
+    add_heading("6. ANÁLISE DA ATIVIDADE REAL")
+    add_text(
+        "A análise da atividade real considera que a execução cotidiana das tarefas pode variar em relação ao trabalho prescrito, principalmente em função de demandas simultâneas, ritmo operacional, comunicação, atendimento ao público, disponibilidade de recursos, organização das prioridades e características individuais dos trabalhadores."
+    )
+    add_text(
+        f"No contexto da empresa, observam-se exigências compatíveis com {activity_profile.get('contexto')} A atividade real deve ser acompanhada continuamente para verificar se as medidas propostas permanecem adequadas ao processo de trabalho."
+    )
+
+    add_heading("6.1 ANÁLISE DAS CONDIÇÕES DE TRABALHO")
+    add_text(
+        "As condições de trabalho foram analisadas considerando os setores selecionados, os cargos cadastrados, as descrições de atividade, os fatores de risco ergonômico e psicossocial e os dados preenchidos no formulário da AET. "
+        "Quando algum campo não foi detalhado pelo usuário, o sistema utilizou preenchimento técnico conservador com base no CNAE e no tipo de atividade, mantendo a necessidade de validação pelo responsável técnico."
+    )
+
+    add_heading("7. MOBILIÁRIO, POSTO DE TRABALHO E ORGANIZAÇÃO")
+    add_text(
+        "O mobiliário, os postos de trabalho, equipamentos, ferramentas e a organização das rotinas devem ser compatíveis com a natureza das atividades desenvolvidas, possibilitando postura adequada, alcance seguro, redução de esforços desnecessários e organização das demandas."
+    )
+    add_text(
+        "A organização do trabalho deve considerar ritmo, pausas, comunicação, autonomia, metas, prioridades, suporte da liderança e prevenção de conflitos, especialmente quando houver risco ergonômico psicossocial selecionado para o setor."
+    )
+
+    add_heading("8. CARGA DE TRABALHO")
+    add_text(
+        f"A carga de trabalho analisada envolve dimensões físicas, cognitivas, organizacionais e psicossociais. Para o perfil {activity_profile.get('label')}, destacam-se: {activity_profile.get('exigencias')}"
+    )
+    add_text(
+        "A priorização das ações deve observar a gravidade dos riscos cadastrados, a possibilidade de ocorrência, a quantidade de trabalhadores expostos, a existência de queixas e a presença de fatores psicossociais."
+    )
+
+    add_heading("9. FATORES ERGONÔMICOS IDENTIFICADOS")
+    add_text(
+        f"Foram considerados os seguintes fatores principais: {_aet_selected_risk_names(all_erg_risks)}. "
+        "Esses fatores são detalhados por setor nos quadros seguintes, com indicação de possíveis impactos, fontes/circunstâncias e recomendações."
+    )
+
+    add_heading("9.1 FATORES FAVORÁVEIS")
+    add_text(
+        f"Como fatores favoráveis, considera-se {activity_profile.get('favoraveis')} Esses elementos contribuem para a implementação de medidas de controle, desde que acompanhados por registros, orientação dos trabalhadores e revisão periódica."
+    )
+
+    add_heading("10. DIAGNÓSTICO ERGONÔMICO")
+    add_text(
+        f"O diagnóstico ergonômico aponta condição geral {general.get('condicao_ergonomica_geral') or 'adequada com recomendações'}, com necessidade de acompanhamento dos setores selecionados e implantação das medidas indicadas. "
+        f"Resumo técnico da criticidade: {_aet_critical_sector_text(groups)}."
+    )
+
+    add_heading("11. RECOMENDAÇÕES ERGONÔMICAS")
+    add_heading("11.1 IMEDIATAS", 2)
+    add_text(activity_profile.get("recomendacoes") or "Implantar orientações ergonômicas, pausas, organização do posto e acompanhamento das condições de trabalho.")
+    add_heading("11.2 MÉDIO PRAZO", 2)
+    add_text("Revisar fluxos de trabalho, adequar mobiliário/equipamentos quando necessário, formalizar procedimentos, melhorar comunicação e acompanhar indicadores como queixas, afastamentos, rotatividade e registros de incidentes.")
+    add_heading("11.3 ESTRUTURAIS", 2)
+    add_text("Integrar a AET ao PGR, manter monitoramento periódico dos fatores ergonômicos e psicossociais, capacitar lideranças e trabalhadores e revisar a organização do trabalho sempre que houver mudança de processo, layout, jornada ou quadro funcional.")
+
     doc.add_page_break()
-    add_heading("ANÁLISE ERGONÔMICA POR SETOR")
+    add_heading("12. PLANO DE AÇÃO ERGONÔMICO / PSICOSSOCIAL POR SETOR")
     for group in groups:
         sector = group.get("sector", {}) or {}
         sector_id = sector.get("id", "")
         sector_name = sector.get("setor", "")
-        sector_data = by_sector.get(sector_id, {}) if isinstance(by_sector, Mapping) else {}
         risks = [risk for risk in group.get("risks", []) or [] if _normalize_option(risk.get("tipo_risco")) in {"ERGONÔMICO", "ERGONÔMICO PSICOSSOCIAL"}]
+        manual_sector_data = by_sector.get(sector_id, {}) if isinstance(by_sector, Mapping) else {}
+        sector_data = _aet_merge_sector_data(_aet_default_sector_data(activity_profile, risks), manual_sector_data)
         cargos = ", ".join([str(c.get("cargo", "")) for c in (sector.get("cargos", []) or []) if c.get("cargo")])
         descricoes = [str(c.get("descricao", "")) for c in (sector.get("cargos", []) or []) if c.get("descricao")]
 
@@ -2499,7 +2935,23 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
         add_heading("Conclusão do setor", 2)
         add_text(_aet_auto_sector_conclusion(sector_name, risks, sector_data))
 
-    add_heading("CONCLUSÃO GERAL")
+    add_heading("13. CONSIDERAÇÕES FINAIS")
+    add_text(
+        f"A presente AET permitiu consolidar a análise das condições de trabalho da empresa {company_doc.get('empresa')}, considerando o perfil de {activity_profile.get('label')}, os setores avaliados, a relação função x atividade e os riscos selecionados no sistema."
+    )
+    add_text(
+        "A análise reforça que a ergonomia deve ser tratada de forma integrada ao gerenciamento de riscos ocupacionais, abrangendo não apenas aspectos físicos e biomecânicos, mas também organização do trabalho, comunicação, autonomia, ritmo, pausas e fatores psicossociais."
+    )
+
+    add_heading("14. INTEGRAÇÃO DA AET AO PGR (NR-01)")
+    add_text(
+        "Os fatores de risco identificados nesta AET devem ser integrados ao inventário de riscos e ao plano de ação do PGR, com definição de medidas preventivas/corretivas, responsáveis, prazos, indicadores de efetividade e reavaliação periódica."
+    )
+    add_text(
+        "Quando houver riscos ergonômicos psicossociais, recomenda-se atenção especial à organização do trabalho, acompanhamento de queixas, comunicação, suporte da liderança, prevenção de conflitos e registro das ações adotadas."
+    )
+
+    add_heading("15. CONCLUSÃO")
     condicao_geral = str(general.get("condicao_ergonomica_geral") or "Adequada com recomendações").strip()
     add_text(f"Condição ergonômica geral classificada: {condicao_geral}.")
     manual_conclusion = str(general.get("conclusao_geral_manual", "") or "").strip()
@@ -2513,6 +2965,14 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
         else:
             add_text("Conclui-se que, com base nas informações cadastradas, não foram evidenciados fatores ergonômicos críticos específicos nos setores selecionados, recomendando-se a manutenção das medidas preventivas, acompanhamento periódico e atualização da AET sempre que houver alteração na organização do trabalho, layout, mobiliário, processo ou queixas dos trabalhadores.")
     add_text("Esta AET deve ser revisada sempre que houver alteração relevante nas atividades, processos, mobiliário, layout, jornada, organização do trabalho, número de trabalhadores, ocorrência de queixas recorrentes ou inclusão de novos riscos ergonômicos/psicossociais no PGR.")
+
+    add_heading("16. FECHAMENTO TÉCNICO E JURÍDICO")
+    add_text(
+        "Sob a ótica técnica, a AET constitui documento de apoio à gestão de segurança e saúde no trabalho, devendo ser utilizada para orientar medidas de prevenção, controle e melhoria contínua das condições laborais. A ausência de acompanhamento das medidas propostas pode comprometer a efetividade do gerenciamento de riscos."
+    )
+    add_text(
+        "A empresa deve manter registros das ações implantadas, treinamentos, orientações, avaliações, revisões e evidências de acompanhamento, especialmente quando os fatores avaliados puderem impactar a saúde física ou mental dos trabalhadores."
+    )
 
     doc.add_paragraph()
     p = doc.add_paragraph()
@@ -2530,5 +2990,5 @@ def generate_aet_docx(groups: list[Mapping[str, Any]], output_path: Path, empres
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(output_path))
+    save_docx_with_default_font(doc, output_path)
     return output_path
