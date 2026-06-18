@@ -322,3 +322,18 @@ body.modal-open{overflow:hidden}
 .aet-model-card summary{cursor:pointer; font-weight:700; color:#2563eb}
 .model-details p{margin:.45rem 0; color:#334155; font-size:.9rem}
 .inline-actions{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+
+/* V49 - edição em massa de riscos */
+.bulk-risk-panel .panel-summary{align-items:center}
+.bulk-alert{border:1px solid #bfdbfe;background:#eff6ff;color:#1e3a8a;border-radius:14px;padding:12px 14px;margin-bottom:14px;line-height:1.45}
+.bulk-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid var(--line);background:#fbfdff;border-radius:14px;padding:12px 14px;margin-bottom:14px}
+.bulk-toolbar span{display:block;margin-top:3px}
+.bulk-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.bulk-field{border:1px solid var(--line);background:#fff;border-radius:14px;padding:12px;display:grid;gap:8px}
+.bulk-field>span{display:flex;align-items:center;gap:8px;margin:0;color:#0f172a;font-size:13px;font-weight:850}
+.bulk-field input[type="checkbox"]{width:auto;margin:0}
+.bulk-risk-check{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:7px;font-size:12px;color:#475569;font-weight:800}
+.bulk-risk-check input{width:auto;margin:0}
+.bulk-risk-check span{margin:0;color:#475569;font-size:12px}
+.risk-row{grid-template-columns:108px minmax(220px,.75fr) minmax(280px,1.15fr) auto}
+@media(max-width:1100px){.bulk-field-grid{grid-template-columns:1fr}.risk-row{grid-template-columns:1fr}}

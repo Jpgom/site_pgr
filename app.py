@@ -99,7 +99,7 @@ def handle_request_entity_too_large(error):
         "Tente gerar novamente. Se estiver no Render, adicione ou aumente MAX_UPLOAD_MB=1024, MAX_FORM_MEMORY_MB=512 e MAX_FORM_PARTS=500000 nas variáveis de ambiente.",
         "error",
     )
-    return redirect(request.referrer or url_for("generate"))
+    return redirect(request.referrer or url_for("gerar"))
 
 
 risk_group_items = db.Table(
@@ -1107,6 +1107,70 @@ def _validate_risk(risk: dict[str, Any]) -> list[str]:
         if risk.get(key) and risk[key] not in valid_options:
             errors.append(f"Selecione uma opção válida em: {label}.")
     return errors
+
+
+BULK_RISK_EDIT_FIELDS = {
+    "acoes": "Ações Preventiva / Corretiva",
+    "indicador": "Indicador de Efetividade",
+    "tipo_risco": "Tipo de Risco",
+    "descricao_agente": "Descrição do agente",
+    "possiveis_lesoes": "Possíveis lesões ou agravos à saúde",
+    "fontes_circunstancias": "Fontes ou circunstâncias",
+    "epis": "EPI",
+    "epcs": "EPC",
+    "grau_severidade": "Grau de Severidade",
+    "grau_possibilidade": "Grau de Possibilidade",
+    "grau_nivel_risco": "Grau de Nível de Risco",
+    "ltcat_meio_propagacao": "LTCAT - Meio de propagação / via de exposição",
+    "ltcat_periodicidade_jornada": "LTCAT - Periodicidade / jornada de exposição",
+    "ltcat_insalubridade": "LTCAT - Insalubridade",
+    "ltcat_grau_insalubridade": "LTCAT - Grau de insalubridade",
+    "ltcat_aposentadoria_especial": "LTCAT - Aposentadoria especial",
+    "ltcat_enquadramento_tecnico": "LTCAT - Enquadramento técnico",
+    "ltcat_parecer_previdenciario": "LTCAT - Parecer previdenciário",
+}
+
+
+def _validate_bulk_risk_edit_field(field: str, value: str) -> str | None:
+    option_checks = {
+        "tipo_risco": (FORM_OPTIONS["tipos_risco"], "Tipo de Risco"),
+        "grau_severidade": (FORM_OPTIONS["severidades"], "Grau de Severidade"),
+        "grau_possibilidade": (FORM_OPTIONS["possibilidades"], "Grau de Possibilidade"),
+        "grau_nivel_risco": (FORM_OPTIONS["niveis_risco"], "Grau de Nível de Risco"),
+    }
+    if field in option_checks:
+        valid_options, label = option_checks[field]
+        if value not in valid_options:
+            return f"Selecione uma opção válida em: {label}."
+    return None
+
+
+def _bulk_risk_edit_payload() -> tuple[list[str], dict[str, str], list[str]]:
+    risk_ids = _dedupe_preserve_order(request.form.getlist("bulk_risk_ids"))
+    selected_fields = _dedupe_preserve_order(request.form.getlist("bulk_apply_fields"))
+    updates: dict[str, str] = {}
+    errors: list[str] = []
+
+    if not risk_ids:
+        errors.append("Selecione pelo menos um risco para editar em massa.")
+    if not selected_fields:
+        errors.append("Marque pelo menos um campo para aplicar aos riscos selecionados.")
+
+    for field in selected_fields:
+        label = BULK_RISK_EDIT_FIELDS.get(field)
+        if not label:
+            errors.append("Um dos campos selecionados para edição em massa é inválido.")
+            continue
+        value = _field(f"bulk_{field}")
+        if not value:
+            errors.append(f"O campo marcado está vazio: {label}. Desmarque o campo ou preencha um valor.")
+            continue
+        field_error = _validate_bulk_risk_edit_field(field, value)
+        if field_error:
+            errors.append(field_error)
+            continue
+        updates[field] = value
+    return risk_ids, updates, errors
 
 
 def _validate_sector(sector: dict[str, Any]) -> list[str]:
@@ -3804,6 +3868,33 @@ def create_risk():
     return redirect(url_for("cadastro"))
 
 
+@app.post("/riscos/editar-em-massa")
+def bulk_edit_risks():
+    risk_ids, updates, errors = _bulk_risk_edit_payload()
+    if errors:
+        for error in errors:
+            flash(error, "error")
+        return redirect(url_for("cadastro"))
+
+    risks = Risk.query.filter(Risk.id.in_(risk_ids)).all()
+    order = {risk_id: index for index, risk_id in enumerate(risk_ids)}
+    risks.sort(key=lambda risk: order.get(risk.id, 999999))
+
+    if not risks:
+        flash("Nenhum risco selecionado foi encontrado.", "error")
+        return redirect(url_for("cadastro"))
+
+    for risk in risks:
+        for field, value in updates.items():
+            setattr(risk, field, value)
+        risk.updated_at = datetime.utcnow()
+
+    db.session.commit()
+    fields_summary = ", ".join(BULK_RISK_EDIT_FIELDS[field] for field in updates)
+    flash(f"Edição em massa concluída: {len(risks)} risco(s) atualizado(s). Campos alterados: {fields_summary}.", "success")
+    return redirect(url_for("cadastro"))
+
+
 @app.route("/risco/<risk_id>/editar", methods=["GET", "POST"])
 def edit_risk(risk_id: str):
     risk_model = db.session.get(Risk, risk_id)
@@ -4197,7 +4288,6 @@ def generate_complete_ltcat():
         _save_report_profile_from_form(auto=True)
         return _send_generated_docx(
             generate_complete_ltcat_docx,
-    generate_aet_docx,
             groups,
             "ltcat_completo",
             "LTCAT_COMPLETO.docx",

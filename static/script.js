@@ -60,6 +60,93 @@ function attachDateMasks() {
 }
 attachDateMasks();
 
+// Edição em massa de riscos
+(function initBulkRiskEdit(){
+  const form = document.getElementById('bulkRiskEditForm');
+  const countEl = document.getElementById('bulkRiskCount');
+  if (!form) return;
+
+  function riskBoxes() {
+    return Array.from(document.querySelectorAll('input[name="bulk_risk_ids"]'));
+  }
+  function selectedRiskBoxes() {
+    return riskBoxes().filter((box) => box.checked);
+  }
+  function selectedApplyFields() {
+    return Array.from(form.querySelectorAll('input[name="bulk_apply_fields"]:checked'));
+  }
+  function fieldLabel(box) {
+    const label = box.closest('.bulk-field');
+    return label ? (label.querySelector('span') || label).textContent.replace(/\s+/g, ' ').replace(/^Aplicar\s+/i, '').trim() : box.value;
+  }
+  function updateCount() {
+    const total = selectedRiskBoxes().length;
+    if (countEl) countEl.textContent = `${total} risco(s) selecionado(s)`;
+  }
+  riskBoxes().forEach((box) => box.addEventListener('change', updateCount));
+
+  const selectVisible = document.getElementById('selectVisibleRisksBtn');
+  if (selectVisible) {
+    selectVisible.addEventListener('click', () => {
+      riskBoxes().forEach((box) => {
+        const row = box.closest('.compact-row');
+        if (!row || row.style.display !== 'none') box.checked = true;
+      });
+      updateCount();
+    });
+  }
+
+  const clear = document.getElementById('clearBulkRisksBtn');
+  if (clear) {
+    clear.addEventListener('click', () => {
+      riskBoxes().forEach((box) => { box.checked = false; });
+      updateCount();
+    });
+  }
+
+  form.addEventListener('submit', (event) => {
+    const selectedRisks = selectedRiskBoxes();
+    const fields = selectedApplyFields();
+    if (!selectedRisks.length) {
+      event.preventDefault();
+      alert('Selecione pelo menos um risco na lista.');
+      return;
+    }
+    if (!fields.length) {
+      event.preventDefault();
+      alert('Marque pelo menos um campo com a opção Aplicar.');
+      return;
+    }
+
+    const emptyFields = fields.filter((box) => {
+      const field = form.querySelector(`[name="bulk_${CSS.escape(box.value)}"]`);
+      return !field || !String(field.value || '').trim();
+    });
+    if (emptyFields.length) {
+      event.preventDefault();
+      alert(`Preencha os campos marcados ou desmarque-os:\n- ${emptyFields.map(fieldLabel).join('\n- ')}`);
+      return;
+    }
+
+    const riskNames = selectedRisks.slice(0, 8).map((box) => box.dataset.bulkRiskName || box.value);
+    const more = selectedRisks.length > riskNames.length ? `\n...e mais ${selectedRisks.length - riskNames.length} risco(s)` : '';
+    const message = [
+      `Você vai alterar ${selectedRisks.length} risco(s).`,
+      '',
+      'Campos que serão alterados:',
+      `- ${fields.map(fieldLabel).join('\n- ')}`,
+      '',
+      'Riscos selecionados:',
+      `- ${riskNames.join('\n- ')}${more}`,
+      '',
+      'Confirmar alterações em massa?'
+    ].join('\n');
+    if (!confirm(message)) event.preventDefault();
+  });
+
+  updateCount();
+})();
+
 
 function selectedPgrSectorIds() {
   return new Set(Array.from(document.querySelectorAll('input[name="pgr_sector_ids"]:checked')).map((box) => box.value));
