@@ -16,8 +16,8 @@
     <label class="span-2"><span>Empresa</span><input name="nome" required value="{{ company.nome or company.empresa or '' }}"></label>
     <label><span>CNPJ</span><input name="cnpj" required value="{{ company.cnpj or '' }}"></label>
     <label><span>Funcionários</span><input name="funcionarios" value="{{ company.funcionarios or '' }}" placeholder="Se vazio, pode ser calculado pelos cargos selecionados"></label>
-    <label><span>Data atual / início da vigência</span><input name="data_atual" value="{{ company.data_atual or '' }}" placeholder="Ex.: 06/2026"></label>
-    <label><span>Data final da vigência</span><input name="data_final" value="{{ company.data_final or '' }}" placeholder="Ex.: 06/2027"></label>
+    <label><span>Data atual / início da vigência</span><input name="data_atual" value="{{ company.data_atual or '' }}" placeholder="Ex.: 06/2026 ou 01/06/2026"></label>
+    <label><span>Data final da vigência</span><input name="data_final" value="{{ company.data_final or '' }}" placeholder="Ex.: 06/2027 ou 01/06/2027"></label>
     <label class="span-2"><span>Endereço</span><input name="endereco" value="{{ company.endereco or '' }}"></label>
     <label><span>Bairro / Cidade</span><input name="bairro_cidade" value="{{ company.bairro_cidade or '' }}"></label>
     <label><span>CEP</span><input name="cep" value="{{ company.cep or '' }}"></label>

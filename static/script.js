@@ -31,29 +31,58 @@ attachSearch('pgrSectorSearch', '#pgrSectorList .sector-option');
 attachSearch('riskPickerSearch', '.risk-option');
 attachSearch('examPickerSearch', '.exam-option');
 
-// Máscara automática para datas: o usuário digita somente números e o sistema insere as barras.
-function maskDateValue(raw) {
+// Máscaras automáticas para datas.
+// Campos de vigência da empresa aceitam os dois formatos:
+// - MM/AAAA (ex.: 06/2027)
+// - DD/MM/AAAA (ex.: 01/06/2027)
+function maskFullDateValue(raw) {
   const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
+
+function maskFlexibleCompanyDateValue(raw) {
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+
+  // Até 6 números, tratar como MM/AAAA. Assim 062027 vira 06/2027.
+  if (digits.length <= 6) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+
+  // Com 7 ou 8 números, tratar como DD/MM/AAAA. Assim 01062027 vira 01/06/2027.
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
 function attachDateMasks() {
-  const selectors = [
+  const fullDateSelectors = [
     '#dataCriacaoLaudo',
     '#dataDaRevisao',
-    'input[name="data_atual"]',
-    'input[name="data_final"]',
     'input[name="data_avaliacao"]',
     'input[name="data_criacao_laudo"]',
     'input[name="data_da_revisao"]'
   ];
-  document.querySelectorAll(selectors.join(',')).forEach((input) => {
+  const flexibleCompanyDateSelectors = [
+    'input[name="data_atual"]',
+    'input[name="data_final"]'
+  ];
+
+  document.querySelectorAll(fullDateSelectors.join(',')).forEach((input) => {
     input.setAttribute('inputmode', 'numeric');
     input.setAttribute('maxlength', '10');
     input.addEventListener('input', () => {
       const before = input.value;
-      const masked = maskDateValue(before);
+      const masked = maskFullDateValue(before);
+      if (before !== masked) input.value = masked;
+    });
+  });
+
+  document.querySelectorAll(flexibleCompanyDateSelectors.join(',')).forEach((input) => {
+    input.setAttribute('inputmode', 'numeric');
+    input.setAttribute('maxlength', '10');
+    input.setAttribute('placeholder', input.getAttribute('placeholder') || 'Ex.: 06/2027 ou 01/06/2027');
+    input.addEventListener('input', () => {
+      const before = input.value;
+      const masked = maskFlexibleCompanyDateValue(before);
       if (before !== masked) input.value = masked;
     });
   });
